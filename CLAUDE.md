@@ -4,27 +4,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-**Greenfield 项目**：仓库目前只有设计文档 `docs/PROJECT_DESIGN.md`（以及本文件），没有代码、`pyproject.toml`、`Makefile`、`README.md`、Docker Compose 或测试。本文件中的命令与目录结构均为设计文档中的**目标状态**，实现前需先搭骨架。设计文档是当前唯一的事实来源；实现与设计冲突时，先确认再改动文档或代码。
+**Greenfield 项目 + 数据源已确认**：仓库目前只有设计文档、原理文档、README 和本文件，没有代码、`pyproject.toml`、`Makefile`、Docker Compose 或测试。
+
+FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库）：
+
+- 仓库：`https://github.com/fastapi/fastapi`
+- 快照：`7a0a3f0b286c6c865cf4398ea0e957a87b8bffa4`（2026-10-23）
+- 文档版本：`0.162.0`（来自 `docs/en/docs/release-notes.md`）
+- 英文文档：`docs/en/docs/**/*.md`（156 个）
+- 代码示例：`docs_src/**/*.py`（485 个）
+
+本文件中的命令与目录结构仍为设计文档中的**目标状态**，实现前需先搭骨架。`docs/PROJECT_DESIGN.md` 是当前唯一的事实来源；实现与设计冲突时，先确认再改动文档或代码。
 
 ## 项目概览
 
-面向 **LangChain / LangGraph 官方技术文档**的 RAG 问答系统：
+面向 **FastAPI 官方技术文档**的 RAG 问答系统：
 
 - 支持中文提问检索英文文档，并用提问语言回答。
 - 每个回答必须给出可点击的文档出处（chunk → section → URL），并能标注适用版本。
 - 检索不到时明确拒答，不编造。
 - **项目签名（唯一深挖点）**：版本感知的活知识库——变更可感知、增量可索引、回答可归因版本。
 - **反教程原则**：baseline 只是对照组；hybrid + rerank 是必备基线；评估 + bad case 闭环是证明手段。MCP / GraphRAG / 多租户 / 多文档源不进入 v1 主线。
-- 目标：可演示、可评估、可部署，并覆盖 RAG 岗位 JD 的主流技术点。
+- 实现栈仍是 LangChain / LangGraph；知识库内容是 FastAPI 文档。目标：可演示、可评估、可部署，并覆盖 RAG 岗位 JD 的主流技术点。
 
 ## 架构（大图）
 
 两条独立链路：
 
-1. **离线索引**：采集（GitLoader 优先 / sitemap）→ 变更检测（commit SHA / content_sha256）→ 只解析变更页面 → 清洗去重 + 版本元数据 → 父子切分 → dense embedding + BM25 sparse → 写入新 collection → alias 原子切换；manifest 记录 `source_ref`、变更集与陈旧度。
-2. **在线问答**：FastAPI → LangGraph 编排（analyze → rewrite / 版本意图 → route → retrieve → grade → generate → check_citations / 版本归因）→ 混合检索（dense + BM25 → RRF，按 `docs_version` 过滤）→ rerank → 带引用生成 → 检查 → SSE 流式返回。
+1. **离线索引**：FastAPI 文档 Git 仓库 → 变更检测（commit SHA / content_sha256）→ 只解析变更页面 → Markdown 清洗 + 代码 include 解析 + 提示块解析 + 版本元数据 → 父子切分 → dense embedding + BM25 sparse → 写入新 collection → alias 原子切换；manifest 记录 `source_ref`、`docs_version`、变更集与陈旧度。
+2. **在线问答**：FastAPI API → LangGraph 编排（analyze → rewrite / 版本意图 → route → retrieve → grade → generate → check_citations / 版本归因）→ 混合检索（dense + BM25 → RRF，按 `docs_version` 过滤）→ rerank → 带引用生成 → 检查 → SSE 流式返回。
 
-核心原则：检索与生成解耦（检索器可独立评估/替换）；先 baseline 再优化，每层优化都要有评估数据；所有回答可追溯；失败可降级（rerank 失败走 RRF、检索为空拒答）；索引可版本化（临时 collection 校验后原子切 alias）；版本可感知（`docs_version` / `source_ref` / `index_build_id` 分离，废弃页面显式标记）。
+核心原则：检索与生成解耦（检索器可独立评估/替换）；先 baseline 再优化，每层优化都要有评估数据；所有回答可追溯；失败可降级（rerank 失败走 RRF、检索为空拒答）；索引可版本化（临时 collection 校验后原子切 alias）；版本可感知（`docs_version` / `source_ref` / `index_build_id` 分离，废弃内容显式标记）。
 
 ## 计划中的常用命令
 
@@ -35,6 +45,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 conda create -n langchain-rag python=3.11 -y
 conda activate langchain-rag
 pip install -U pip uv
+
+# 数据源（已拉取；更新时）
+git -C data/raw/fastapi pull --ff-only
+git -C data/raw/fastapi rev-parse HEAD
 
 # 本地依赖服务（只起 Qdrant + Redis）
 docker compose up -d qdrant redis
@@ -74,19 +88,31 @@ pytest tests/unit/test_chunker.py::test_protects_code_blocks -q   # 单个测试
 - LLM 与 Embedding 分开配置：DeepSeek 没有 embedding 服务，需单独接 Qwen `text-embedding-v4` / OpenAI / 本地 BGE。
 - 查询改写、路由、评分用更便宜的小模型；LLM-as-Judge 与生成模型分开，降低自评偏差。
 
+**FastAPI 数据源解析（本项目特有）**
+- 文档是 **Markdown（MkDocs Material）**，不是 MDX。
+- 代码块通过 `{* ../../docs_src/xxx.py hl[...] *}` 外链引入，**切分前必须解析 include**，并去掉 `hl[...]` 参数；否则文档中的代码全部丢失。
+- 提示块使用 `/// tip`、`/// note`、`/// warning`、`/// danger` 语法，解析时保留类型与正文；废弃信息常出现在 `warning` 中。
+- 标题带锚点 `# First Steps { #first-steps }`，切分与引用时保留 anchor，并从标题文本中剥离。
+- URL 映射：`docs/en/docs/tutorial/first-steps.md` → `https://fastapi.tiangolo.com/tutorial/first-steps/`；`index.md` → 目录 URL。
+- `docs/en/docs/reference/**` 是 mkdocstrings 指令（`::: fastapi.FastAPI`），不是实际 API 文本；v1 不将其作为正文索引，或只索引页面导语。
+- `docs/en/docs/release-notes.md` 是版本信息源，标记 `doc_type=release_notes`；不要让它主导普通问答检索。
+- 元信息页面（`about/`、`resources/`、`contributing.md`、`fastapi-people.md`、`newsletter.md` 等）标记为 `doc_type=meta`，默认不参与业务问答。
+- v1 只索引文本与代码，不索引图片。
+
 **切分与索引**
 - 父子切分：parent 约 1200–1600 tokens，child 约 300–500 tokens，overlap 50–80；命中 child 后返回 parent 给 LLM。
 - 代码块不可从中间切断；长代码块按空行/函数边界切，保留语言标记。child 的 metadata 含 `content_type`、`code_language`。
-- embedding 前拼接标题上下文头：`[LangChain > Guides > Memory > Short-term memory]`。
+- embedding 前拼接标题上下文头：`[FastAPI > Tutorial > First Steps]`。
 - chunk ID = `doc_id + section_hash + chunk_index`；内容哈希不变则跳过。
 - **向量维度一旦建库不可随意改**：换 embedding 模型 = 重建 collection；manifest 记录 `embedding_model`、`dimension`、`docs_version`、`source_ref`。
-- 写入临时 collection `langchain_docs_build_<ts>` → 校验 → 原子切换 alias `langchain_docs_current`；旧版本保留一个用于回滚。
+- 写入临时 collection `fastapi_docs_build_<ts>` → 校验 → 原子切换 alias `fastapi_docs_current`；旧版本保留一个用于回滚。
 
 **版本与增量（项目签名）**
-- 变更检测优先级：Git commit diff > sitemap `lastmod` > `content_sha256`；默认每日刷新，产出 diff 报告。
-- 版本字段必须分开：`docs_version`（文档内容对应版本，未知写 `"unknown"`）、`source_ref`（commit SHA / ETag）、`index_build_id`（构建标识）。
+- 变更检测优先级：Git commit diff > `content_sha256`。FastAPI 文档没有可用的 sitemap 版本机制，不引入 sitemap 分支。
+- 版本字段必须分开：`docs_version`（文档快照对应的 FastAPI 版本，来自 release notes / git tag；未知写 `"unknown"`）、`source_ref`（commit SHA）、`index_build_id`（构建标识）。
+- 文档只维护“最新版”页面；历史版本通过 **git tag checkout** 重建快照，不要假设仓库里存在按版本分的文档目录。
 - 增量重建：只重嵌入变更 chunk，复用 embedding 缓存；全量点写入新 collection，alias 原子切换，保留上一版本可回滚。
-- 废弃页面不立即物理删除：标 `is_deprecated=true`，检索降权 / 按需过滤；确认删除后再清理。
+- 废弃 API 不立即物理删除：标 `is_deprecated=true`，检索降权 / 按需过滤；确认删除后再清理。典型例子：`@app.on_event` → `lifespan`。
 - 必做指标：陈旧度、源变更→可检索延迟、重嵌入比例、版本归因准确率、废弃 API 识别率。
 - 更新调度放宿主机（Windows Task Scheduler / cron），不引入 Airflow / Celery。
 
@@ -95,6 +121,7 @@ pytest tests/unit/test_chunker.py::test_protects_code_blocks -q   # 单个测试
 - 流程：dense top 40 + sparse top 40 → RRF（k=60）→ 候选 top 20 → rerank → 最终 top 6–8（受 token 预算约束）；不要对全库 rerank。
 - 元数据过滤字段：`product` / `language` / `doc_type` / `docs_version` / `is_deprecated`。
 - 版本策略：未指定版本时默认当前版本并降低旧版本权重；指定版本时按 `docs_version` 过滤，同时召回当前版本做差异对比；上下文同时含新旧版本时必须显式标注。
+- 中文 query 的 sparse 分支需要英文检索式扩展，否则 BM25 几乎无法命中英文文档；必须用评估验证。
 - 检索失败：rerank 最高分低于阈值 → 返回“未找到相关内容”+ 相近主题链接；首次召回为空改写重试一次；仍为空不调用 LLM 编造。
 - 失败 query 进入 bad case 池，用于补 golden set。
 - HyDE 与 contextual retrieval 都是**需评估验证后再开启**的实验项，不默认启用。
@@ -118,9 +145,9 @@ pytest tests/unit/test_chunker.py::test_protects_code_blocks -q   # 单个测试
 
 **配置与安全**
 - 所有配置走 `.env` + Pydantic Settings；`.env.example` 入库，`.env` 不入库；启动时校验必需配置，缺项 fail-fast。
-- `.env.example` 草案见设计文档附录 A，关键变量：`LLM_*`、`EMBEDDING_*`、`QDRANT_*`、`DOCS_SOURCE_KIND`、`DOCS_REPO_URL`、`DOCS_REPO_BRANCH`、`INDEX_REFRESH_CRON`、`STALENESS_THRESHOLD_HOURS`、`DEFAULT_DOCS_VERSION`、`EMBEDDING_CACHE_DIR`、`REDIS_URL`、`LANGSMITH_*`、`RETRIEVAL_*`、`RERANK_TOP_K`、`FINAL_TOP_K`、`ADMIN_API_KEY`、`RATE_LIMIT_*`。
+- `.env.example` 草案见设计文档附录 A，关键变量：`LLM_*`、`EMBEDDING_*`、`QDRANT_*`、`DOCS_REPO_URL`、`DOCS_REPO_BRANCH`、`INDEX_REFRESH_CRON`、`STALENESS_THRESHOLD_HOURS`、`DEFAULT_DOCS_VERSION`、`EMBEDDING_CACHE_DIR`、`REDIS_URL`、`LANGSMITH_*`、`RETRIEVAL_*`、`RERANK_TOP_K`、`FINAL_TOP_K`、`ADMIN_API_KEY`、`RATE_LIMIT_*`。
 - 日志不打印 API Key、完整 prompt、用户敏感信息；admin 接口单独鉴权；限流按 IP / session / API key。
-- 采集遵守 `robots.txt`，限速约 1 req/s，不重新分发全文。
+- 采集遵守 `robots.txt`，限速约 1 req/s，不重新分发全文；FastAPI 文档仓库为 MIT，但仍只用于学习演示。
 
 ## 环境约束（Windows 本机）
 
@@ -129,12 +156,13 @@ pytest tests/unit/test_chunker.py::test_protects_code_blocks -q   # 单个测试
 - **只把 Qdrant + Redis 放进 Docker**（端口 6333/6334/6379）；FastAPI、采集、评估脚本跑宿主机；不要引入 Langfuse 全家桶（先使用 LangSmith 云端）。
 - 新建并使用专用 conda 环境 `langchain-rag`，不要污染 `comp4528`。
 - **不要复用 Claude Code 的 `ANTHROPIC_*` 环境变量**作为应用 Key；使用独立项目 Key 写入 `.env`。
+- 本机 hosts 把 `github.com` 解析到 `127.0.0.1`；执行 git / gh 前需开启加速器。
 
 ## 目标目录结构（概要）
 
 ```text
 src/langchain_rag/   # config, ingestion, indexing, retrieval, generation, graph, evaluation, observability
-  ingestion/         # fetcher, change_detector, parser, normalizer
+  ingestion/         # fetcher, change_detector, parser（含 include/admonition 解析）, normalizer
   indexing/          # chunker, embedder, indexer, updater（增量 / 版本切换）
 apps/api/            # FastAPI 应用
 apps/web/            # Vite + React + TypeScript
@@ -142,7 +170,7 @@ scripts/             # ingest, update_index, diff_report, rebuild_index, evaluat
 tests/{unit,integration,e2e}/
 data/{raw,processed,cache,manifests,reports}/
 docker/              # Dockerfile.api, Dockerfile.web
-docs/                # PROJECT_DESIGN.md, EVALUATION.md, BAD_CASES.md
+docs/                # PROJECT_DESIGN.md, RAG_PRINCIPLES.md, EVALUATION.md, BAD_CASES.md
 ```
 
 ## 迭代路线与验收
@@ -153,22 +181,20 @@ docs/                # PROJECT_DESIGN.md, EVALUATION.md, BAD_CASES.md
 
 ## 开工前待确认事项
 
-设计文档第 17 节仍有以下事项待确认，实现时不要擅自假设：
+数据范围已确认：**只做 FastAPI 英文文档（docs/en/docs）+ 对应代码示例**。以下仍待确认，实现时不要擅自假设：
 
-1. LLM / Embedding 供应商与 Key（推荐 DeepSeek + 通义千问，或 OpenAI 一套）。
-2. 文档范围（A：仅 LangChain Python；B：+ LangGraph（推荐）；C：再加 JS / API Reference）。
-3. 回答语言（推荐中文提问→中文回答；也可双语或统一英文）。
-
-前端形态已于 v0.2 确定：Vite + React + TypeScript + Tailwind + shadcn/ui（详见 `docs/PROJECT_DESIGN.md` §4.6）。
-
-版本感知能力依赖数据源可提供 Git commit / 版本信息；若只能抓渲染 HTML，则退化为 `fetched_at` + 内容哈希 + 页面文本中的版本标记。选型叙事见 `docs/PROJECT_DESIGN.md` §4.7–§4.8 与附录 D。
+1. **LLM / Embedding 供应商与 Key**（推荐 DeepSeek + 通义千问，或 OpenAI 一套）。当前先用占位配置，不阻塞数据与解析开发。
+2. **回答语言**（推荐中文提问→中文回答）。当前先按“使用提问语言回答”设计，黄金集语言配比后定。
+3. **`reference/` 页面是否纳入 v1**（推荐不纳入正文索引，只保留页面导语或跳过）。
+4. **`release-notes.md` 是否进入普通检索**（推荐索引但单独 `doc_type=release_notes`，默认降权 / 仅在版本类问题中提升）。
 
 另有可选输入：目标岗位 JD 原文，用于对齐技术点。
 
 ## 参考入口
 
-- LangChain 文档：`https://docs.langchain.com/` / `https://python.langchain.com/`
-- LangGraph 文档：`https://langchain-ai.github.io/langgraph/`
+- FastAPI 文档：`https://fastapi.tiangolo.com/`
+- FastAPI 仓库：`https://github.com/fastapi/fastapi`
+- FastAPI Release Notes：`https://fastapi.tiangolo.com/release-notes/`
 - Qdrant 文档：`https://qdrant.tech/documentation/`
 - RAGAS：`https://docs.ragas.io/`
 - LangSmith：`https://docs.smith.langchain.com/`

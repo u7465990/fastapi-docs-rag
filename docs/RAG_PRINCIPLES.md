@@ -1,4 +1,4 @@
-# 原理文档：版本感知的 LangChain 技术文档 RAG
+# 原理文档：版本感知的 FastAPI 技术文档 RAG
 
 > 版本：v0.1（2026-10-18）  
 > 定位：解释本项目每个设计**为什么成立**，以及底层机制与失败模式。  
@@ -82,7 +82,9 @@ RAG 的召回率上限由“索引表示 + 召回策略”决定。设某个问�
 | sitemap.xml | URL、`lastmod` | 中等：`lastmod` 经常不准或全站一起变 |
 | 渲染后的 HTML | URL、内容、ETag/Last-Modified | 最弱：只能靠内容哈希和页面文本里的版本标记 |
 
-因此采集器必须产出 `source_ref`（commit SHA / ETag），而不是只存 `fetched_at`。没有 `source_ref`，“文档变更 → 可检索延迟”就无法准确度量，只能退化成“我们多久抓一次”。
+本项目只有一种入口：**FastAPI 官方 Git 仓库**（`fastapi/fastapi`）。英文文档在 `docs/en/docs/**/*.md`，代码示例在 `docs_src/**/*.py`，后者通过 `{* ../../docs_src/... *}` 被文档引用。FastAPI 文档只维护“最新版”页面，版本号来自 `release-notes.md` 顶部版本或 git tag，因此 `source_ref`（commit SHA）和 `docs_version`（0.162.0）必须同时保存。
+
+没有 `source_ref`，“文档变更 → 可检索延迟”就无法准确度量，只能退化成“我们多久抓一次”；没有 `docs_version`，回答就无法标注适用版本。
 
 ### 2.2 解析与清洗：保住结构就是保住语义
 
@@ -93,7 +95,15 @@ RAG 的召回率上限由“索引表示 + 召回策略”决定。设某个问�
 - **提示框 / 警告块**（note、warning、deprecated）包含版本与迁移信息；
 - **表格**包含参数对比、版本支持矩阵。
 
-如果清洗时只保留“可见文本”，这些结构全部丢失，后续切分和生成都会退化。因此解析目标是 **HTML/MDX → 保留结构的 Markdown**，而不是纯文本。
+如果清洗时只保留“可见文本”，这些结构全部丢失，后续切分和生成都会退化。因此解析目标是 **保留结构的 Markdown**，而不是纯文本。
+
+FastAPI 文档还有三种特有结构，必须在清洗阶段处理：
+
+- `{* ../../docs_src/... *}` 代码 include 要先展开，并去掉 `hl[...]` 行高亮参数；
+- `/// tip`、`/// warning` 等提示块要保留类型与正文，其中常含废弃/迁移信息；
+- 标题里的 `{ #anchor }` 要分离出来，用于生成可点击的 URL 锚点。
+
+否则代码示例、废弃警告和精确引用都会丢失。`reference/**` 页面是 mkdocstrings 指令（`::: fastapi.FastAPI`），没有实际 API 文本，v1 默认排除。
 
 同时要处理噪声：导航栏、页脚、cookie 提示、重复的“Edit this page”等。这些内容会污染 embedding，让不相关页面在向量空间里彼此靠近。
 
@@ -134,10 +144,10 @@ Parent（约 1200–1600 tokens，完整小节）
 
 代码块是不可分割的语义单元。切分器需要：
 
-1. 识别 fenced code block 的起止；
+1. 先展开 `{* ../../docs_src/... *}` include，再识别 fenced code block 的起止；
 2. 短代码块整体保留；
 3. 超长代码块按空行 / 函数 / 类边界切，但每段都保留语言标记和所属标题；
-4. 在 metadata 中写 `content_type="code"`、`code_language`。
+4. 在 metadata 中写 `content_type="code"`、`code_language`、`source_path`。
 
 技术文档 RAG 里，很多“答非所问”不是模型问题，而是代码示例被切成了两半。
 
@@ -146,7 +156,7 @@ Parent（约 1200–1600 tokens，完整小节）
 embedding 前给 child 拼接：
 
 ```text
-[LangChain > Guides > Memory > Short-term memory]
+[FastAPI > Tutorial > Dependencies > Classes as Dependencies]
 <chunk 正文>
 ```
 
@@ -180,17 +190,17 @@ cos(q, d) = (q · d) / (||q|| · ||d||)
 
 #### 多语言与跨语言检索
 
-中文问题检索英文文档，依赖 embedding 模型的跨语言对齐能力。Qwen `text-embedding-v4`、BGE-M3 这类多语言模型会把“如何添加记忆”和 “how to add memory”映射到相近区域。但这不是无限的：
+中文问题检索英文文档，依赖 embedding 模型的跨语言对齐能力。Qwen `text-embedding-v4`、BGE-M3 这类多语言模型会把“如何注入数据库会话”和 “how to inject a database session”映射到相近区域。但这不是无限的：
 
 - 专有名词、缩写、代码符号的跨语言对齐较弱；
-- 中文提问里的英文 API 名（如 `checkpointer`）反而更容易被保留；
+- 中文提问里的英文 API 名（如 `Depends`、`Annotated`）反而更容易被保留；
 - 不同语言的语料分布差异会带来偏移。
 
 #### Embedding 的失败模式
 
 向量检索擅长“语义相近、用词不同”，但不擅长：
 
-- 精确符号：`RunnableParallel`、`interrupt_before`、错误码；
+- 精确符号：`Depends`、`Annotated`、`HTTPException`、`lifespan`、错误码；
 - 罕见词 / 新 API 名：训练语料里没有，向量没有稳定位置；
 - 否定与数值：`不是 A` 与 `是 A` 可能很近；
 - 长文本细节：一个 chunk 里 80% 是背景，关键句只占一行。
@@ -210,7 +220,7 @@ IDF(q_i) = ln(1 + (N − n(q_i) + 0.5) / (n(q_i) + 0.5))
 ```
 
 - **TF 饱和**：词出现次数增加的边际收益递减，避免长文堆词；
-- **IDF**：越罕见的词权重越高，`checkpointer` 比 `the` 重要；
+- **IDF**：越罕见的词权重越高，`lifespan` 比 `the` 重要；
 - **长度归一化**：`b` 控制长文档的惩罚，避免长文天然占优；
 - 典型参数：`k1 ∈ [1.2, 2.0]`，`b = 0.75`。
 
@@ -283,10 +293,10 @@ content_sha256, index_build_id
 Qdrant 的 alias 是一个指向 collection 的别名。写入流程：
 
 ```text
-1. 创建 langchain_docs_build_<ts>
+1. 创建 fastapi_docs_build_<ts>
 2. 全量写入点（只对变更 chunk 调用 embedding）
 3. 校验：点数、版本覆盖率、抽样检索、关键问题回归
-4. 原子地把 langchain_docs_current 指向新 collection
+4. 原子地把 fastapi_docs_current 指向新 collection
 5. 保留上一个 build，用于回滚
 ```
 
@@ -332,8 +342,8 @@ dense 和 sparse 的失败模式高度互补：
 
 | 场景 | Dense | Sparse |
 |---|---|---|
-| “怎么给对话加记忆” vs “how to add memory” | ✅ 语义对齐 | ❌ 词不重合 |
-| `RunnableParallel` / `interrupt_before` | ⚠️ 符号弱 | ✅ 精确命中 |
+| “怎么注入数据库会话” vs “how to inject a database session” | ✅ 语义对齐 | ❌ 词不重合 |
+| `Depends` / `Annotated` / `lifespan` | ⚠️ 符号弱 | ✅ 精确命中 |
 | 报错信息片段 | ❌ 易被语义近似干扰 | ✅ 精确 |
 | 同义改写、口语化提问 | ✅ | ❌ |
 | 新 API 名（未在训练语料） | ⚠️ 向量不稳定 | ✅ 只要文档里有这个词 |
@@ -588,9 +598,9 @@ sources → token*N → usage → done
 
 | 字段 | 回答的问题 | 示例 |
 |---|---|---|
-| `docs_version` | 这份内容对应文档/库的哪个版本？ | `v0.4`、`unknown` |
-| `source_ref` | 这份内容来自哪个源快照？ | `git:<commit-sha>`、ETag |
-| `index_build_id` | 它是哪次索引构建写入的？ | `20261018T100000Z` |
+| `docs_version` | 这份内容对应 FastAPI 的哪个版本？ | `0.162.0`、`unknown` |
+| `source_ref` | 这份内容来自哪个源快照？ | `git:7a0a3f0...` |
+| `index_build_id` | 它是哪次索引构建写入的？ | `20261026T100000Z` |
 
 为什么要分开：
 
@@ -601,12 +611,13 @@ sources → token*N → usage → done
 ### 6.2 变更检测的层级
 
 ```text
-Git commit diff  >  sitemap lastmod  >  content_sha256
+Git commit diff  >  content_sha256
 ```
 
 - **Git diff**：最精确，能区分新增/修改/删除/重命名；
-- **sitemap lastmod**：粒度粗，可能全站一起变，也可能不变但内容变了；
 - **内容哈希**：兜底，能发现内容变化，但受空白、导航噪声影响。
+
+FastAPI 文档不需要 sitemap 分支：数据源就是 Git 仓库，commit diff 已足够；版本号另外从 `release-notes.md` 或 git tag 读取。注意 `docs_version` 与 `source_ref` 不是一回事：同一个 FastAPI 版本可能对应多个文档提交，同一个 commit 也可能只是修正错别字而版本号未变。
 
 哈希前必须做规范化（统一换行、去掉导航/页脚、去掉动态时间戳等），否则会产生大量“假变更”，导致不必要的重嵌入。
 
@@ -655,6 +666,13 @@ embedding 缓存 key 用 `content_sha256`（或 `model + content_sha256`），�
 3. 若用户明确问旧版本/旧 API，仍可召回；
 4. 生成时提示“该 API 已废弃”并给出上下文中的迁移写法；
 5. 确认删除后再清理。
+
+FastAPI 场景要把两种标记分开：
+
+- **section 级废弃**：标题明确写 `(deprecated)`，或 warning 块说明整个 API 已废弃 → `is_deprecated=true`；
+- **正文提及废弃**：只是顺带说“某参数已废弃” → `deprecation_hint=true`，不能把整个 chunk 判为废弃。
+
+典型例子：`advanced/events.md` 的 “Alternative Events (deprecated)” 对应 `@app.on_event`，迁移目标是 `lifespan`；生成时必须提示这一点，而不是继续推荐旧写法。
 
 ---
 
@@ -765,25 +783,26 @@ NDCG@k   = DCG@k / IDCG@k
 
 ## 10. 走一遍：一个中文问题的一生
 
-问题：**“LangGraph 的 interrupt 和 checkpointer 怎么配合使用？”**
+问题：**“FastAPI 里 `on_event` 已废弃，怎么迁移到 `lifespan`？”**
 
 ```text
 1. analyze
-   - 意图：how-to
-   - 产品：langgraph
+   - 意图：how-to + 版本/废弃意图
+   - 产品：fastapi
    - 语言：python
    - 版本意图：latest
    - 语言：中文提问
+   - 过滤：include_deprecated=true
 
 2. rewrite / query expansion
    - 独立问题（若有多轮）：保留原意
-   - 英文检索式（供 sparse 分支）："LangGraph interrupt checkpointer how to use together"
-   - 可选 multi-query：interrupt / checkpointer / human-in-the-loop
+   - 英文检索式（供 sparse 分支）："FastAPI on_event deprecated migrate to lifespan"
+   - 可选 multi-query：app.on_event / lifespan events / startup shutdown
 
 3. retrieve
    - dense：中文 query → 多语言 embedding → 语义召回
-   - sparse：英文扩展 → BM25 → 精确命中 interrupt / checkpointer
-   - filter：product=langgraph, language=python, is_deprecated=false
+   - sparse：英文扩展 → BM25 → 精确命中 on_event / lifespan
+   - filter：product=fastapi, language=python, include_deprecated=true
    - dense top40 + sparse top40 → RRF(k=60) → top20
 
 4. rerank
@@ -794,15 +813,16 @@ NDCG@k   = DCG@k / IDCG@k
    - child → parent 展开
    - 按 parent 去重，控制 token 预算
    - 每条带编号、docs_version、URL、section
+   - 命中 deprecated section 时在 context 头标注 DEPRECATED
 
 6. generate
    - 中文回答，代码/API 名保留英文
    - 关键结论标注 [1][2]
-   - 若上下文涉及旧版 API，显式提示
+   - 显式说明 on_event 已废弃，给出 lifespan 的迁移写法
 
 7. check_citations
    - [n] 是否存在、是否支持该句
-   - 版本声明是否能对应到上下文
+   - 版本/废弃声明是否能对应到上下文
    - 失败则修正或降级
 
 8. stream
@@ -844,12 +864,16 @@ NDCG@k   = DCG@k / IDCG@k
 以下不是设计错误，而是需要在实现/评估阶段用数据确认的点：
 
 1. **中文 query 的 sparse 分支**：不翻译时 BM25 基本失效；英文扩展是否有效、是否引入噪声，需要 A/B。
-2. **reranker 的跨语言能力**：`bge-reranker-base` 对中英混合的效果要实测；必要时换多语言 reranker。
+2. **reranker 的跨语言能力**：`bge-reranker-base` 对中英混合的效果要实测；必要时换 `bge-reranker-v2-m3` 这类多语言 reranker。
 3. **拒答阈值**：cross-encoder 分数不是概率，必须用 golden set 校准，不能拍一个 0.5。
 4. **标题前缀对 BM25 的影响**：标题注入对 dense 通常有益，但会改变 BM25 词频分布；建议 dense 用带标题文本、sparse 用正文 + 标题字段分别验证。
-5. **`docs_version` 的可获得性**：若文档源只提供渲染 HTML，版本只能来自页面文本标记；无法判断时必须是 `unknown`，不要让模型猜。
+5. **版本只覆盖最新版**：FastAPI 文档仓库不保存按版本分的页面；历史版本要靠 git tag checkout。若不做历史快照，旧版问题只能从 release notes 回答，必须明确告知覆盖范围，不能假装读过旧文档。
 6. **增量索引的正确性**：必须有“变更集 → 点数 → 抽样检索 → 回滚”的校验，否则增量逻辑的 bug 会静默污染知识库。
 7. **评估口径一致性**：每次实验固定 embedding 模型、reranker、top-k、prompt 和 judge 模型，否则指标不可比。
+8. **include 展开的正确性**：`{* ... *}` 可能有嵌套目录、`hl[...]` 参数、缺失文件；必须有单测覆盖，否则代码示例会静默丢失或错位。
+9. **reference 页面为空**：`::: fastapi.FastAPI` 是构建指令，不是正文；若误把它当作 API 文档索引，会得到“有页面、无内容”的假召回。
+10. **release notes / meta 页面污染**：`release-notes.md` 版本号密集，容易抢占普通问题的 top-k；`about/`、`resources/` 等元信息页应打 `doc_type=meta` 并默认过滤。
+11. **废弃标记的粒度**：只在 section 明确废弃时置 `is_deprecated=true`；正文顺带提废弃只置 `deprecation_hint=true`，否则会把正常内容整体降权。
 
 ---
 
