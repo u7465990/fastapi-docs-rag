@@ -304,14 +304,15 @@ v1 只使用：
 - `docs/en/docs/**/*.md`：英文文档，156 个文件；
 - `docs_src/**/*.py`：文档引用的代码示例，485 个文件；
 - `docs/en/mkdocs.yml`：导航结构；
-- `docs/en/docs/release-notes.md`：版本来源。
+- `docs/en/docs/release-notes.md`：版本来源；
+- `fastapi/**`：仅用于解析代码 include（`how-to/configure-swagger-ui.md` 引用了 `fastapi/openapi/docs.py`），不索引源码。
 
 不纳入：
 
 - 其他语言目录 `docs/<lang>/`；
 - `docs/en/docs/img/**`：图片，v1 不做多模态；
 - `reference/` 下的 mkdocstrings 指令正文；
-- FastAPI 源码本身（除非后续做 API Reference）。
+- FastAPI 源码的其余部分（除被 include 引用的片段）。
 
 **已拉取快照**：
 
@@ -328,7 +329,7 @@ docs_version = 0.162.0
 git clone --filter=blob:none --no-checkout https://github.com/fastapi/fastapi.git data/raw/fastapi
 cd data/raw/fastapi
 git sparse-checkout init --cone
-git sparse-checkout set docs/en docs_src
+git sparse-checkout set docs/en docs_src fastapi
 git checkout master
 ```
 

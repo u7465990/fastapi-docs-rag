@@ -13,6 +13,7 @@ FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排�
 - 文档版本：`0.162.0`（来自 `docs/en/docs/release-notes.md`）
 - 英文文档：`docs/en/docs/**/*.md`（156 个）
 - 代码示例：`docs_src/**/*.py`（485 个）
+- `fastapi/**`：仅用于解析少数指向源码的 include（如 `fastapi/openapi/docs.py`），不索引源码
 
 本文件中的命令与目录结构仍为设计文档中的**目标状态**，实现前需先搭骨架。`docs/PROJECT_DESIGN.md` 是当前唯一的事实来源；实现与设计冲突时，先确认再改动文档或代码。
 
@@ -90,7 +91,7 @@ pytest tests/unit/test_chunker.py::test_protects_code_blocks -q   # 单个测试
 
 **FastAPI 数据源解析（本项目特有）**
 - 文档是 **Markdown（MkDocs Material）**，不是 MDX。
-- 代码块通过 `{* ../../docs_src/xxx.py hl[...] *}` 外链引入，**切分前必须解析 include**，并去掉 `hl[...]` 参数；否则文档中的代码全部丢失。
+- 代码块通过 `{* ../../docs_src/xxx.py hl[...] *}` 外链引入，**切分前必须解析 include**，并去掉 `hl[...]` 参数；否则文档中的代码全部丢失。少数 include 指向 `fastapi/` 源码（如 `fastapi/openapi/docs.py`），解析器需要按仓库根目录的 `docs_src` / `fastapi` 锚点解析，并支持 `ln[start:end]` 行范围。
 - 提示块使用 `/// tip`、`/// note`、`/// warning`、`/// danger` 语法，解析时保留类型与正文；废弃信息常出现在 `warning` 中。
 - 标题带锚点 `# First Steps { #first-steps }`，切分与引用时保留 anchor，并从标题文本中剥离。
 - URL 映射：`docs/en/docs/tutorial/first-steps.md` → `https://fastapi.tiangolo.com/tutorial/first-steps/`；`index.md` → 目录 URL。

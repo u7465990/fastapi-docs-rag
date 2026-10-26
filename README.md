@@ -19,9 +19,36 @@
 git clone --filter=blob:none --no-checkout https://github.com/fastapi/fastapi.git data/raw/fastapi
 cd data/raw/fastapi
 git sparse-checkout init --cone
-git sparse-checkout set docs/en docs_src
+git sparse-checkout set docs/en docs_src fastapi
 git checkout master
 ```
+
+> `fastapi/` 只用于解析 `how-to/configure-swagger-ui.md` 中对 `fastapi/openapi/docs.py` 的代码 include，不索引其源码。
+
+## 快速开始
+
+```bash
+# 1. 环境（本机 .condarc 含失效的 pkgs/free 镜像，使用显式渠道绕过）
+conda create -n langchain-rag python=3.11 -y --override-channels \
+  -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main \
+  -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
+conda activate langchain-rag
+
+# 2. 安装（Phase 0 只需要核心依赖；后续接 LangChain 时再装 rag extra）
+pip install -e ".[dev]"
+
+# 3. 启动依赖服务
+docker compose up -d qdrant redis
+
+# 4. 启动 API
+python -m langchain_rag.cli
+```
+
+启动后：
+
+- API 文档：http://localhost:8000/docs
+- 存活检查：http://localhost:8000/healthz
+- 就绪检查：http://localhost:8000/readyz（需要 Qdrant、Redis 和模型 Key）
 
 ## 文档
 
