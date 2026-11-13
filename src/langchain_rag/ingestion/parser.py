@@ -18,9 +18,16 @@ SITE_URL = "https://fastapi.tiangolo.com"
 CODE_INCLUDE_RE = re.compile(r"^\{\*\s*(\S+)\s*(.*?)\s*\}\s*$")
 LINE_RANGE_RE = re.compile(r"ln\[(\d+)(?::(\d+))?\]")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)(?:\s*\{\s*#([^}\s]+)\s*\})?\s*$")
-ADMONITION_START_RE = re.compile(r"^///\s*([A-Za-z0-9_-]+)\s*$")
-ADMONITION_END_RE = re.compile(r"^///\s*$")
+ADMONITION_START_RE = re.compile(
+    r"^(\s*)(/{3,})\s*([A-Za-z0-9_-]+)(?:\s*\|\s*(.+?))?\s*$"
+)
+ADMONITION_END_RE = re.compile(r"^(\s*)(/{3,})\s*$")
 CODE_FENCE_RE = re.compile(r"^\s*(`{3,4})(.*)$")
+
+# ``deprecat`` covers deprecated / deprecate / deprecating / deprecation.
+DEPRECATION_RE = re.compile(r"\bdeprecat", re.IGNORECASE)
+INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+BLOCKQUOTE_PREFIX_RE = re.compile(r"^(?:>\s?)+")
 
 DOC_TYPE_DIRS = {"tutorial", "advanced", "how-to", "deployment", "learn", "reference"}
 REPO_ANCHORS = ("docs_src", "fastapi", "scripts", "tests")
@@ -67,6 +74,7 @@ class Section:
     heading: Heading
     path: list[str]
     lines: list[str] = field(default_factory=list)
+    deprecated_admonitions: list[str] = field(default_factory=list)
 
     @property
     def title(self) -> str:
@@ -78,7 +86,15 @@ class Section:
 
     @property
     def is_deprecated(self) -> bool:
-        return "deprecated" in self.title.lower()
+        """Strong signal: the heading or an admonition says "deprecated"."""
+        return bool(DEPRECATION_RE.search(self.heading.title)) or bool(
+            self.deprecated_admonitions
+        )
+
+    @property
+    def mentions_deprecation(self) -> bool:
+        """Weak signal: any prose (not only headings/admonitions) mentions it."""
+        return self.is_deprecated or mentions_deprecation(self.lines)
 
 
 @dataclass
@@ -93,6 +109,7 @@ class ParsedDocument:
     code_includes: list[str]
     content_sha256: str
     frontmatter: dict[str, object] = field(default_factory=dict)
+    preamble_deprecated_admonitions: list[str] = field(default_factory=list)
 
     @property
     def doc_id(self) -> str:
@@ -100,7 +117,15 @@ class ParsedDocument:
 
     @property
     def has_deprecated_section(self) -> bool:
+        """True when a heading/admonition marks a deprecated API (strong)."""
         return any(section.is_deprecated for section in self.sections)
+
+    @property
+    def has_deprecation_notes(self) -> bool:
+        """True when deprecation is mentioned anywhere in prose (weak)."""
+        return bool(self.preamble_deprecated_admonitions) or any(
+            section.mentions_deprecation for section in self.sections
+        )
 
     def metadata(
         self,
@@ -124,6 +149,7 @@ class ParsedDocument:
             "fetched_at": fetched_at,
             "is_deprecated": False,
             "has_deprecated_section": self.has_deprecated_section,
+            "has_deprecation_notes": self.has_deprecation_notes,
             "content_sha256": self.content_sha256,
             "index_build_id": index_build_id,
         }
@@ -302,11 +328,87 @@ def _parse_frontmatter(lines: list[str]) -> tuple[dict[str, object], list[str]]:
     return {}, lines
 
 
-def _render_admonition(kind: str, body: list[str]) -> list[str]:
-    rendered = [f"> **{kind.upper()}**", ">"]
+def _render_admonition(
+    kind: str,
+    body: list[str],
+    title: str | None = None,
+    indent: str = "",
+) -> list[str]:
+    rendered = [f"{indent}> **{kind.upper()}**"]
+    if title:
+        rendered.append(f"{indent}> *{title}*")
+    rendered.append(f"{indent}>")
     for line in body:
-        rendered.append(f"> {line}" if line else ">")
+        rendered.append(f"{indent}> {line}" if line else f"{indent}>")
     return rendered
+
+
+def _parse_admonition(
+    lines: list[str],
+    start: int,
+    opener: re.Match[str],
+    *,
+    depth: int = 0,
+) -> tuple[list[str], int, bool]:
+    """Render one admonition block.
+
+    Returns ``(rendered_lines, next_index, mentions_deprecation)``. MkDocs
+    Material lets a ``////`` tab group contain ``///`` notes and allows
+    admonitions indented inside list items, so both the slash count and the
+    leading indent are preserved.
+    """
+    indent = opener.group(1)
+    fence_length = len(opener.group(2))
+    kind = opener.group(3)
+    title = opener.group(4)
+    deprecated = mentions_deprecation([title] if title else [])
+    body: list[str] = []
+    cursor = start + 1
+
+    while cursor < len(lines):
+        line = lines[cursor]
+        nested = ADMONITION_START_RE.match(line)
+        if nested and depth < 3:
+            nested_rendered, cursor, nested_deprecated = _parse_admonition(
+                lines, cursor, nested, depth=depth + 1
+            )
+            deprecated = deprecated or nested_deprecated
+            body.extend(nested_rendered)
+            continue
+
+        end = ADMONITION_END_RE.match(line)
+        if end and len(end.group(2)) == fence_length:
+            cursor += 1
+            break
+
+        body.append(line[len(indent) :] if indent and line.startswith(indent) else line)
+        cursor += 1
+
+    deprecated = deprecated or mentions_deprecation(body)
+    return _render_admonition(kind, body, title, indent), cursor, deprecated
+
+
+def mentions_deprecation(lines: list[str]) -> bool:
+    """Return True when non-code prose mentions deprecation.
+
+    Fenced code is skipped (a ``# deprecated`` comment is not a notice) and
+    inline code spans are blanked, so a parameter literally named
+    ``deprecated`` does not count as a notice.
+    """
+    in_fence = False
+    fence_marker = ""
+    for line in lines:
+        content = BLOCKQUOTE_PREFIX_RE.sub("", line)
+        in_fence, fence_marker, is_fence = _advance_fence(
+            content,
+            in_fence=in_fence,
+            fence_marker=fence_marker,
+        )
+        if is_fence or in_fence:
+            continue
+        if DEPRECATION_RE.search(INLINE_CODE_RE.sub(" ", content)):
+            return True
+    return False
 
 
 def parse_markdown(
@@ -328,6 +430,7 @@ def parse_markdown(
     )
 
     preamble: list[str] = []
+    preamble_deprecated: list[str] = []
     sections: list[Section] = []
     stack: list[Heading] = []
     current: Section | None = None
@@ -351,17 +454,20 @@ def parse_markdown(
         if not in_fence:
             admonition = ADMONITION_START_RE.match(line)
             if admonition:
-                kind = admonition.group(1)
-                body: list[str] = []
-                cursor = index + 1
-                while cursor < len(lines) and not ADMONITION_END_RE.match(lines[cursor]):
-                    body.append(lines[cursor])
-                    cursor += 1
-                if cursor < len(lines):
-                    target = current.lines if current else preamble
-                    target.extend(_render_admonition(kind, body))
-                    index = cursor + 1
-                    continue
+                kind = admonition.group(3)
+                rendered, next_index, deprecated = _parse_admonition(
+                    lines, index, admonition
+                )
+                if current is not None:
+                    current.lines.extend(rendered)
+                    if deprecated:
+                        current.deprecated_admonitions.append(kind)
+                else:
+                    preamble.extend(rendered)
+                    if deprecated:
+                        preamble_deprecated.append(kind)
+                index = next_index
+                continue
 
             heading = parse_heading(line)
             if heading:
@@ -403,6 +509,7 @@ def parse_markdown(
         code_includes=code_includes,
         content_sha256=content_sha256,
         frontmatter=frontmatter,
+        preamble_deprecated_admonitions=preamble_deprecated,
     )
 
 

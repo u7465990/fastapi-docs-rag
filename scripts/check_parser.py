@@ -33,6 +33,7 @@ def main() -> None:
     print(f"sections:        {sum(len(d.sections) for d in documents)}")
     print(f"code includes:   {sum(len(d.code_includes) for d in documents)}")
     print(f"deprecated docs: {sum(1 for d in documents if d.has_deprecated_section)}")
+    print(f"deprecation notes: {sum(1 for d in documents if d.has_deprecation_notes)}")
     print(f"doc types:       {dict(sorted(types.items()))}")
     print(f"missing includes: {len(missing)}")
     for path in missing[:10]:

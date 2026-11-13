@@ -41,6 +41,15 @@ langchain-rag-serve = "langchain_rag.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.uv]
+# 默认走清华镜像（国内直连 pypi.org 会超时）。海外环境或镜像故障时：
+#   uv lock --default-index https://pypi.org/simple
+#   uv sync --default-index https://pypi.org/simple
+[[tool.uv.index]]
+name = "tuna"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

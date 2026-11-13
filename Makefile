@@ -1,13 +1,17 @@
-.PHONY: install install-rag dev up down logs lint format test test-unit
+.PHONY: install install-rag dev up down logs lint format test test-unit check-parser check-chunker
+
+UV ?= uv
+# 依赖由 make install 同步；运行时不再 sync，避免把 rag extra 卸掉
+RUN = $(UV) run --no-sync
 
 install:
-	pip install -e ".[dev]"
+	$(UV) sync --extra dev
 
 install-rag:
-	pip install -e ".[dev,rag]"
+	$(UV) sync --extra dev --extra rag
 
 dev:
-	python -m langchain_rag.cli
+	$(RUN) python -m langchain_rag.cli
 
 up:
 	docker compose up -d qdrant redis
@@ -19,14 +23,20 @@ logs:
 	docker compose logs -f qdrant redis
 
 lint:
-	ruff check .
-	mypy src
+	$(RUN) ruff check .
+	$(RUN) mypy src
 
 format:
-	ruff format .
+	$(RUN) ruff format .
 
 test:
-	pytest
+	$(RUN) pytest
 
 test-unit:
-	pytest tests/unit
+	$(RUN) pytest tests/unit
+
+check-parser:
+	$(RUN) python scripts/check_parser.py
+
+check-chunker:
+	$(RUN) python scripts/check_chunker.py

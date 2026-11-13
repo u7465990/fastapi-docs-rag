@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-**Greenfield 项目 + 数据源已确认**：仓库目前只有设计文档、原理文档、README 和本文件，没有代码、`pyproject.toml`、`Makefile`、Docker Compose 或测试。
+**Phase 0 骨架已落地 + 数据源已确认**：仓库已有 `pyproject.toml` + `uv.lock`、`src/langchain_rag/`（config / api / cli / ingestion.parser / indexing.chunker）、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。embedding、索引写入、检索、生成、评估与前端尚未实现。
 
-FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库）：
+FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库；当前 C 工作区是**文件快照，不含 `.git`**，实现增量索引前需按 README 重建 sparse checkout）：
 
 - 仓库：`https://github.com/fastapi/fastapi`
 - 快照：`7a0a3f0b286c6c865cf4398ea0e957a87b8bffa4`（2026-10-23）
@@ -15,7 +15,7 @@ FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排�
 - 代码示例：`docs_src/**/*.py`（485 个）
 - `fastapi/**`：仅用于解析少数指向源码的 include（如 `fastapi/openapi/docs.py`），不索引源码
 
-本文件中的命令与目录结构仍为设计文档中的**目标状态**，实现前需先搭骨架。`docs/PROJECT_DESIGN.md` 是当前唯一的事实来源；实现与设计冲突时，先确认再改动文档或代码。
+本文件中的目录结构仍为设计文档中的**目标状态**。`docs/PROJECT_DESIGN.md` 是当前唯一的事实来源；实现与设计冲突时，先确认再改动文档或代码。
 
 ## 项目概览
 
@@ -39,13 +39,12 @@ FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排�
 
 ## 计划中的常用命令
 
-以下命令在骨架搭建后可用，当前尚未创建对应文件：
+以下命令在仓库根目录执行（数据源与骨架已就绪）：
 
 ```bash
-# 环境（不要污染 comp4528 课程环境）
-conda create -n langchain-rag python=3.11 -y
-conda activate langchain-rag
-pip install -U pip uv
+# 环境（uv 管理，.venv 已在 .gitignore；不要污染 comp4528 等课程环境）
+uv venv .venv --python 3.12
+uv sync --extra dev                 # core + dev；接 LangChain 时加 --extra rag
 
 # 数据源（已拉取；更新时）
 git -C data/raw/fastapi pull --ff-only
@@ -56,7 +55,7 @@ docker compose up -d qdrant redis
 # Qdrant dashboard: http://localhost:6333/dashboard
 
 # API（宿主机运行，不进 Docker）
-uvicorn langchain_rag.api:app --reload --port 8000
+uv run --no-sync python -m langchain_rag.cli
 
 # 前端（Vite + React，目录创建后）
 cd apps/web && npm install
@@ -64,23 +63,23 @@ npm run dev     # Vite dev server: http://localhost:5173
 npm run build   # 生产静态文件
 npm run lint
 
-# 索引与评估脚本
-python scripts/ingest.py
-python scripts/update_index.py     # 定时增量更新（项目签名）
-python scripts/diff_report.py      # 变更 / 陈旧度报告
-python scripts/rebuild_index.py
-python scripts/evaluate.py
+# 索引与评估脚本（尚未实现）
+uv run --no-sync python scripts/ingest.py
+uv run --no-sync python scripts/update_index.py     # 定时增量更新（项目签名）
+uv run --no-sync python scripts/diff_report.py      # 变更 / 陈旧度报告
+uv run --no-sync python scripts/rebuild_index.py
+uv run --no-sync python scripts/evaluate.py
 
 # 静态检查与测试
-ruff check .
-mypy src
-pytest                                    # 全部
-pytest tests/unit                         # 单元
-pytest tests/integration                  # 集成（需 Qdrant/Redis）
-pytest tests/unit/test_chunker.py::test_protects_code_blocks -q   # 单个测试
+uv run --no-sync ruff check .
+uv run --no-sync mypy src
+uv run --no-sync pytest                                    # 全部
+uv run --no-sync pytest tests/unit                         # 单元
+uv run --no-sync pytest tests/integration                  # 集成（需 Qdrant/Redis）
+uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_split -q   # 单个测试
 ```
 
-`Makefile` 计划提供 `make dev` 等入口（设计文档的 Phase 0 验收标准）。
+`uv run --no-sync` 的前提是先用 `uv sync` 同步过环境；它不会在运行时卸载 rag extra。`Makefile` 提供 `make dev` / `make test` / `make lint` 等封装。
 
 ## 关键设计约定
 
@@ -155,7 +154,8 @@ pytest tests/unit/test_chunker.py::test_protects_code_blocks -q   # 单个测试
 - Windows 10，i7-11390H（4C/8T），16GB RAM；Docker Desktop 已运行，国内镜像已配置。
 - **不能跑本地大模型**（MX450 2GB VRAM）：LLM 走云端 API，本地只做 CPU embedding / rerank。
 - **只把 Qdrant + Redis 放进 Docker**（端口 6333/6334/6379）；FastAPI、采集、评估脚本跑宿主机；不要引入 Langfuse 全家桶（先使用 LangSmith 云端）。
-- 新建并使用专用 conda 环境 `langchain-rag`，不要污染 `comp4528`。
+- 使用仓库内 `.venv`（uv 管理，CPython 3.12），不要污染 `comp4528` 等课程环境。
+- 工作区在 `C:` 盘上，DSH 会话为完全访问权限；`uv sync`、`pytest`、`git commit` 等写盘/联网命令可直接执行。
 - **不要复用 Claude Code 的 `ANTHROPIC_*` 环境变量**作为应用 Key；使用独立项目 Key 写入 `.env`。
 - 本机 hosts 把 `github.com` 解析到 `127.0.0.1`；执行 git / gh 前需开启加速器。
 

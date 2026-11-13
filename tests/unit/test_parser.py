@@ -125,3 +125,117 @@ def test_doc_type_classification() -> None:
     assert guess_doc_type(Path("release-notes.md")) == "release_notes"
     assert guess_doc_type(Path("about/index.md")) == "meta"
     assert guess_doc_type(Path("features.md")) == "concept"
+
+
+def test_admonition_variants_are_rendered(tmp_path: Path) -> None:
+    repo_root, docs_root, doc_path = _make_doc(tmp_path)
+    text = "\n".join(
+        [
+            "# Admonitions",
+            "",
+            "/// tip | Read more",
+            "",
+            "Titled tip body.",
+            "",
+            "///",
+            "",
+            "1. Step one.",
+            "",
+            "    /// note",
+            "",
+            "    Indented note body.",
+            "",
+            "    ///",
+            "",
+            "//// tab | Python 3.10+",
+            "",
+            "/// warning",
+            "",
+            "Nested warning body.",
+            "",
+            "///",
+            "",
+            "////",
+            "",
+        ]
+    )
+
+    doc = parse_markdown(
+        text,
+        doc_path=doc_path.with_name("admonitions.md"),
+        docs_root=docs_root,
+        repo_root=repo_root,
+    )
+
+    assert "> **TIP**" in doc.markdown
+    assert "> *Read more*" in doc.markdown
+    assert "    > **NOTE**" in doc.markdown
+    assert "    > Indented note body." in doc.markdown
+    assert "> **TAB**" in doc.markdown
+    assert "> > **WARNING**" in doc.markdown
+    assert not [
+        line for line in doc.markdown.splitlines() if line.lstrip().startswith("///")
+    ]
+
+
+def test_deprecation_signals(tmp_path: Path) -> None:
+    repo_root, docs_root, doc_path = _make_doc(tmp_path)
+    text = "\n".join(
+        [
+            "# Deprecations",
+            "",
+            "## Deprecating parameters",
+            "",
+            "Use `deprecated=True`.",
+            "",
+            "## Old events",
+            "",
+            "/// warning | Deprecated `on_event`",
+            "",
+            "Use `lifespan` instead.",
+            "",
+            "///",
+            "",
+            "## Prose mention",
+            "",
+            "This parameter is now deprecated.",
+            "",
+            "## Code comment",
+            "",
+            "```python",
+            "# deprecated but this is only a code comment",
+            "x = 1",
+            "```",
+            "",
+            "## Inline code",
+            "",
+            "The OpenAPI field is called `deprecated`.",
+            "",
+        ]
+    )
+
+    doc = parse_markdown(
+        text,
+        doc_path=doc_path.with_name("deprecations.md"),
+        docs_root=docs_root,
+        repo_root=repo_root,
+    )
+    sections = {section.title: section for section in doc.sections}
+
+    assert sections["Deprecating parameters"].is_deprecated is True
+    assert sections["Old events"].is_deprecated is True
+    assert sections["Prose mention"].is_deprecated is False
+    assert sections["Prose mention"].mentions_deprecation is True
+    assert sections["Code comment"].mentions_deprecation is False
+    assert sections["Inline code"].mentions_deprecation is False
+    assert doc.has_deprecated_section is True
+    assert doc.has_deprecation_notes is True
+
+    metadata = doc.metadata(
+        docs_version="0.162.0",
+        source_ref="deadbeef",
+        fetched_at="2026-11-11",
+        index_build_id="build-1",
+    )
+    assert metadata["has_deprecated_section"] is True
+    assert metadata["has_deprecation_notes"] is True

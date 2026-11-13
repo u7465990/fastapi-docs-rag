@@ -4,7 +4,7 @@
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Greenfield。数据源已拉取，代码骨架尚未实现。
+> 当前状态：Phase 0 环境与骨架已完成，解析器与父子切分器可用（含单元测试）；下一步是 embedding 与索引写入。
 
 ## 数据源
 
@@ -13,7 +13,7 @@
 - 英文文档：`docs/en/docs/**/*.md`（156 个）
 - 代码示例：`docs_src/**/*.py`（485 个）
 
-本地数据位于 `data/raw/fastapi/`，已被 `.gitignore` 排除，不进入仓库。重新获取：
+本地数据位于 `data/raw/fastapi/`，已被 `.gitignore` 排除，不进入仓库。当前工作区是文件快照（不含 `.git`）；需要更新或做增量索引时，先按下面命令重建 sparse checkout：
 
 ```bash
 git clone --filter=blob:none --no-checkout https://github.com/fastapi/fastapi.git data/raw/fastapi
@@ -27,22 +27,36 @@ git checkout master
 
 ## 快速开始
 
+环境由 [uv](https://docs.astral.sh/uv/) 管理（`uv >= 0.13`；CPython 3.12 由 uv 托管，仓库已提交 `uv.lock`）。
+
 ```bash
-# 1. 环境（本机 .condarc 含失效的 pkgs/free 镜像，使用显式渠道绕过）
-conda create -n langchain-rag python=3.11 -y --override-channels \
-  -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main \
-  -c https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge
-conda activate langchain-rag
+# 1. 依赖（首次）
+uv sync --extra dev                 # core + pytest / ruff / mypy
+uv sync --extra dev --extra rag     # 接 LangChain / LangGraph 时再装
 
-# 2. 安装（Phase 0 只需要核心依赖；后续接 LangChain 时再装 rag extra）
-pip install -e ".[dev]"
+# 2. 配置
+cp .env.example .env                # Windows PowerShell: Copy-Item .env.example .env
+# 然后填入 LLM_API_KEY、EMBEDDING_API_KEY
 
-# 3. 启动依赖服务
+# 3. 依赖服务（只起 Qdrant + Redis）
 docker compose up -d qdrant redis
 
 # 4. 启动 API
-python -m langchain_rag.cli
+uv run --no-sync python -m langchain_rag.cli
 ```
+
+常用命令：
+
+```bash
+uv run --no-sync pytest                      # 全部测试
+uv run --no-sync pytest tests/unit           # 仅单元测试
+uv run --no-sync ruff check .
+uv run --no-sync mypy src
+uv run --no-sync python scripts/check_parser.py   # 解析器冒烟统计
+uv run --no-sync python scripts/check_chunker.py  # 切分统计（token 分布 / 代码块 / 废弃）
+```
+
+`make install` / `make test` / `make lint` 是上面的薄封装。
 
 启动后：
 
@@ -65,7 +79,9 @@ LangChain / LangGraph · Qdrant（dense + sparse hybrid）· BM25 + RRF · Cross
 
 ## 本地环境
 
-- Python 3.11（conda 环境 `langchain-rag`）
+- Python 3.12（uv 托管；`requires-python >=3.11,<3.13`）
+- uv 0.13+，依赖版本锁定在 `uv.lock`
 - Docker Desktop（仅运行 Qdrant + Redis）
 - Node.js 24 / npm 11（前端）
+- PyPI 默认走清华镜像（`pyproject.toml` 的 `[tool.uv.index]`），海外环境用 `--default-index https://pypi.org/simple` 覆盖
 - 访问 GitHub 需要开启加速器（本机 hosts 将 `github.com` 指向 `127.0.0.1`）
