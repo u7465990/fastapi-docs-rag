@@ -28,6 +28,21 @@ CODE_FENCE_RE = re.compile(r"^\s*(`{3,4})(.*)$")
 DEPRECATION_RE = re.compile(r"\bdeprecat", re.IGNORECASE)
 INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
 BLOCKQUOTE_PREFIX_RE = re.compile(r"^(?:>\s?)+")
+# Titles like "Deprecate a path operation" document a feature; they do not
+# describe an API that is deprecated.
+INSTRUCTIONAL_DEPRECATION_RE = re.compile(
+    r"^\s*(?:documentation\s+)?deprecat(?:e|ing)\b",
+    re.IGNORECASE,
+)
+DEPRECATED_TITLE_RE = re.compile(r"^\s*deprecated\b", re.IGNORECASE)
+PARAMETER_RE = re.compile(
+    r"\b(?:parameters?|arguments?|keywords?|query parameters?|path parameters?)\b",
+    re.IGNORECASE,
+)
+DEPRECATED_PHRASE_RE = re.compile(
+    r"\b(?:is|are|was|were|has been|have been)\s+(?:now\s+)?deprecated\b",
+    re.IGNORECASE,
+)
 
 DOC_TYPE_DIRS = {"tutorial", "advanced", "how-to", "deployment", "learn", "reference"}
 REPO_ANCHORS = ("docs_src", "fastapi", "scripts", "tests")
@@ -86,8 +101,8 @@ class Section:
 
     @property
     def is_deprecated(self) -> bool:
-        """Strong signal: the heading or an admonition says "deprecated"."""
-        return bool(DEPRECATION_RE.search(self.heading.title)) or bool(
+        """Strong signal: the section itself documents a deprecated API."""
+        return _heading_is_deprecated(self.heading.title) or bool(
             self.deprecated_admonitions
         )
 
@@ -95,6 +110,11 @@ class Section:
     def mentions_deprecation(self) -> bool:
         """Weak signal: any prose (not only headings/admonitions) mentions it."""
         return self.is_deprecated or mentions_deprecation(self.lines)
+
+    @property
+    def deprecation_hint(self) -> bool:
+        """Weak signal that is not strong enough to mark the section deprecated."""
+        return self.mentions_deprecation and not self.is_deprecated
 
 
 @dataclass
@@ -352,7 +372,7 @@ def _parse_admonition(
 ) -> tuple[list[str], int, bool]:
     """Render one admonition block.
 
-    Returns ``(rendered_lines, next_index, mentions_deprecation)``. MkDocs
+    Returns ``(rendered_lines, next_index, is_deprecated)``. MkDocs
     Material lets a ``////`` tab group contain ``///`` notes and allows
     admonitions indented inside list items, so both the slash count and the
     leading indent are preserved.
@@ -361,7 +381,7 @@ def _parse_admonition(
     fence_length = len(opener.group(2))
     kind = opener.group(3)
     title = opener.group(4)
-    deprecated = mentions_deprecation([title] if title else [])
+    strong = False
     body: list[str] = []
     cursor = start + 1
 
@@ -372,7 +392,7 @@ def _parse_admonition(
             nested_rendered, cursor, nested_deprecated = _parse_admonition(
                 lines, cursor, nested, depth=depth + 1
             )
-            deprecated = deprecated or nested_deprecated
+            strong = strong or nested_deprecated
             body.extend(nested_rendered)
             continue
 
@@ -384,17 +404,26 @@ def _parse_admonition(
         body.append(line[len(indent) :] if indent and line.startswith(indent) else line)
         cursor += 1
 
-    deprecated = deprecated or mentions_deprecation(body)
-    return _render_admonition(kind, body, title, indent), cursor, deprecated
+    strong = strong or _admonition_is_deprecated(title, body)
+    return _render_admonition(kind, body, title, indent), cursor, strong
 
 
-def mentions_deprecation(lines: list[str]) -> bool:
-    """Return True when non-code prose mentions deprecation.
+def _heading_is_deprecated(title: str) -> bool:
+    """Return True when a heading explicitly marks its API as deprecated.
 
-    Fenced code is skipped (a ``# deprecated`` comment is not a notice) and
-    inline code spans are blanked, so a parameter literally named
-    ``deprecated`` does not count as a notice.
+    "Deprecate a path operation" and "Deprecating parameters" are guides for
+    marking something else as deprecated, not deprecated APIs themselves.
     """
+    if INSTRUCTIONAL_DEPRECATION_RE.search(title):
+        return False
+    if PARAMETER_RE.search(title):
+        return False
+    return bool(DEPRECATION_RE.search(title))
+
+
+def _plain_prose(lines: list[str]) -> str:
+    """Return non-code prose with inline code spans blanked."""
+    kept: list[str] = []
     in_fence = False
     fence_marker = ""
     for line in lines:
@@ -406,9 +435,36 @@ def mentions_deprecation(lines: list[str]) -> bool:
         )
         if is_fence or in_fence:
             continue
-        if DEPRECATION_RE.search(INLINE_CODE_RE.sub(" ", content)):
-            return True
-    return False
+        kept.append(INLINE_CODE_RE.sub(" ", content))
+    return "\n".join(kept)
+
+
+def _admonition_is_deprecated(title: str | None, body: list[str]) -> bool:
+    """Return True only for a section-level deprecation notice.
+
+    Parameter/keyword deprecations are weak hints: they say one input is
+    deprecated, not that the whole section's API is gone.
+    """
+    title_text = title or ""
+    prose = _plain_prose(body)
+    combined = f"{title_text}\n{prose}"
+    if not DEPRECATION_RE.search(combined):
+        return False
+    if PARAMETER_RE.search(combined):
+        return False
+    if DEPRECATED_TITLE_RE.search(title_text):
+        return True
+    return bool(DEPRECATED_PHRASE_RE.search(prose))
+
+
+def mentions_deprecation(lines: list[str]) -> bool:
+    """Return True when non-code prose mentions deprecation.
+
+    Fenced code is skipped (a ``# deprecated`` comment is not a notice) and
+    inline code spans are blanked, so a parameter literally named
+    ``deprecated`` does not count as a notice.
+    """
+    return bool(DEPRECATION_RE.search(_plain_prose(lines)))
 
 
 def parse_markdown(

@@ -25,6 +25,8 @@ git checkout master
 
 > `fastapi/` 只用于解析 `how-to/configure-swagger-ui.md` 中对 `fastapi/openapi/docs.py` 的代码 include，不索引其源码。
 
+release notes 默认只把最近 20 个版本切进普通索引（`RELEASE_NOTES_LATEST_VERSIONS`）；历史版本后续通过 git tag 重建，避免 changelog 主导检索。
+
 ## 快速开始
 
 环境由 [uv](https://docs.astral.sh/uv/) 管理（`uv >= 0.13`；CPython 3.12 由 uv 托管，仓库已提交 `uv.lock`）。

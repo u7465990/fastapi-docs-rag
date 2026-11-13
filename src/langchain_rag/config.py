@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     index_refresh_cron: str = "0 3 * * *"
     staleness_threshold_hours: int = 24
     default_docs_version: str = "latest"
+    # Release notes are much larger than the docs; keep the newest versions
+    # in the normal index and route historical version questions elsewhere.
+    release_notes_latest_versions: int = 20
     include_deprecated: bool = True
     embedding_cache_dir: Path = Path("data/cache/embeddings")
 

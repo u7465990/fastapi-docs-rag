@@ -188,11 +188,43 @@ def test_deprecation_signals(tmp_path: Path) -> None:
             "",
             "Use `deprecated=True`.",
             "",
+            "## Deprecate a path operation",
+            "",
+            "Pass `deprecated=True` to the decorator.",
+            "",
+            "## Alternative Events (deprecated)",
+            "",
+            "Use `lifespan`.",
+            "",
             "## Old events",
             "",
             "/// warning | Deprecated `on_event`",
             "",
             "Use `lifespan` instead.",
+            "",
+            "///",
+            "",
+            "## Parameter hint",
+            "",
+            "/// warning | Deprecated `root_path` parameter",
+            "",
+            "This parameter is now deprecated.",
+            "",
+            "///",
+            "",
+            "## Keyword hint",
+            "",
+            "/// note | Deprecated `example` keyword",
+            "",
+            "The `example` keyword is now deprecated.",
+            "",
+            "///",
+            "",
+            "## WSGI note",
+            "",
+            "/// note",
+            "",
+            "WSGIMiddleware is now deprecated.",
             "",
             "///",
             "",
@@ -222,8 +254,25 @@ def test_deprecation_signals(tmp_path: Path) -> None:
     )
     sections = {section.title: section for section in doc.sections}
 
-    assert sections["Deprecating parameters"].is_deprecated is True
+    # Guides for marking something as deprecated are not deprecated APIs.
+    assert sections["Deprecating parameters"].is_deprecated is False
+    assert sections["Deprecating parameters"].mentions_deprecation is True
+    assert sections["Deprecating parameters"].deprecation_hint is True
+    assert sections["Deprecate a path operation"].is_deprecated is False
+    assert sections["Deprecate a path operation"].deprecation_hint is True
+
+    # Real section-level deprecations stay strong.
+    assert sections["Alternative Events (deprecated)"].is_deprecated is True
     assert sections["Old events"].is_deprecated is True
+    assert sections["Old events"].deprecation_hint is False
+    assert sections["WSGI note"].is_deprecated is True
+
+    # Parameter/keyword notices are hints, not whole-section deprecations.
+    assert sections["Parameter hint"].is_deprecated is False
+    assert sections["Parameter hint"].deprecation_hint is True
+    assert sections["Keyword hint"].is_deprecated is False
+    assert sections["Keyword hint"].deprecation_hint is True
+
     assert sections["Prose mention"].is_deprecated is False
     assert sections["Prose mention"].mentions_deprecation is True
     assert sections["Code comment"].mentions_deprecation is False

@@ -1,9 +1,13 @@
 """Split parsed FastAPI documents into parent and child chunks.
 
-A parent keeps one whole section (up to ~1400 tokens) for the LLM; children
-(~400 tokens) are what gets embedded. Code fences are atomic: a fence is never
-cut mid-block, and only a block larger than 800 tokens is split on blank lines
-or definition boundaries, with the language marker kept on every piece.
+A parent keeps a coherent run of sections for the LLM; children (~400 tokens)
+are what gets embedded. Code fences are atomic: a fence is never cut
+mid-block, and only a block larger than 800 tokens is split on blank lines or
+definition boundaries, with the language marker kept on every piece.
+
+Small FastAPI sections are common, so parents are packed across consecutive
+sections up to ``parent_tokens`` instead of forcing one tiny parent per
+section. Children never span section boundaries, which keeps citations precise.
 """
 
 from __future__ import annotations
@@ -21,8 +25,8 @@ from langchain_rag.ingestion.parser import (
     _advance_fence,
 )
 
-#: English prose averages ~4 characters per token. This deliberately
-#: over-estimates code, which keeps the budget on the safe side.
+#: English prose averages ~4 characters per token. This is a rough estimate,
+#: not a tokenizer; code may be slightly under-counted.
 TOKEN_CHARS = 4
 
 #: A code block up to this size stays atomic even if it exceeds the child
@@ -32,6 +36,10 @@ CODE_BLOCK_MAX_TOKENS = 800
 SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 DEFINITION_RE = re.compile(r"^(?:async\s+)?(?:def|class)\s")
 QUOTE_PREFIX_RE = re.compile(r"^\s*(?:>\s?)+")
+VERSION_HEADING_RE = re.compile(
+    r"^\d+\.\d+(?:\.\d+)?(?:[A-Za-z0-9.\-+]*)?(?:\s|$)"
+)
+LATEST_CHANGES_TITLE = "Latest Changes"
 
 BlockKind = Literal["prose", "code"]
 ContentType = Literal["prose", "code", "mixed"]
@@ -45,6 +53,17 @@ class _Block:
     text: str
     kind: BlockKind = "prose"
     language: str | None = None
+    #: Text inserted before this block when joining a run of blocks.
+    separator: str = "\n\n"
+
+
+@dataclass(frozen=True)
+class _SectionBlocks:
+    """A section plus the atomic blocks that belong to it."""
+
+    section: Section
+    blocks: list[_Block]
+    tokens: int
 
 
 @dataclass(frozen=True)
@@ -62,6 +81,7 @@ class Chunk:
     content_type: ContentType
     code_language: str | None
     is_deprecated: bool
+    deprecation_hint: bool
     section_hash: str
     chunk_index: int
 
@@ -166,17 +186,23 @@ def _hard_split(text: str, budget: int) -> list[str]:
 def _split_prose(block: _Block, budget: int) -> list[_Block]:
     """Split an over-long paragraph into sentence-sized blocks."""
     pieces: list[_Block] = []
-    for sentence in SENTENCE_RE.split(block.text):
-        sentence = sentence.strip()
-        if not sentence:
-            continue
+    sentences = [sentence.strip() for sentence in SENTENCE_RE.split(block.text)]
+    sentences = [sentence for sentence in sentences if sentence]
+    for index, sentence in enumerate(sentences):
+        # Sentences from one paragraph stay on one line; a blank line marks a
+        # real paragraph boundary (the next original prose block).
+        separator = "\n\n" if index == 0 else " "
         if count_tokens(sentence) <= budget:
-            pieces.append(_Block(text=sentence, kind="prose"))
+            pieces.append(_Block(text=sentence, kind="prose", separator=separator))
         else:
-            pieces.extend(
-                _Block(text=part, kind="prose")
-                for part in _hard_split(sentence, budget)
-            )
+            for part_index, part in enumerate(_hard_split(sentence, budget)):
+                pieces.append(
+                    _Block(
+                        text=part,
+                        kind="prose",
+                        separator=separator if part_index == 0 else " ",
+                    )
+                )
     return pieces or [block]
 
 
@@ -294,6 +320,18 @@ def _overlap_prefix(text: str, budget: int) -> str:
     return "\n".join(taken)
 
 
+def _overlap_from_prose(blocks: Sequence[_Block], budget: int) -> str:
+    """Overlap only the trailing prose run; never carry a code fragment."""
+    trailing: list[_Block] = []
+    for block in reversed(blocks):
+        if block.kind != "prose":
+            break
+        trailing.append(block)
+    if not trailing:
+        return ""
+    return _overlap_prefix(_join(list(reversed(trailing))), budget)
+
+
 def _pack_children(
     blocks: Sequence[_Block],
     child_tokens: int,
@@ -328,8 +366,8 @@ def _pack_children(
 
         children.append((prefix, group))
         prefix = ""
-        if overlap_tokens > 0 and group[-1].kind == "prose":
-            prefix = _overlap_prefix(_join(group), overlap_tokens)
+        if overlap_tokens > 0:
+            prefix = _overlap_from_prose(group, overlap_tokens)
 
     return children
 
@@ -343,6 +381,13 @@ def _section_body(section: Section) -> list[str]:
 
 def _section_hash(doc: ParsedDocument, section: Section) -> str:
     key = f"{doc.doc_id}|{'/'.join(section.path)}|{section.anchor or ''}"
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
+
+
+def _batch_hash(doc: ParsedDocument, units: Sequence[_SectionBlocks]) -> str:
+    if len(units) == 1:
+        return _section_hash(doc, units[0].section)
+    key = "|".join(_section_hash(doc, unit.section) for unit in units)
     return hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
 
 
@@ -363,20 +408,204 @@ def _code_language(blocks: Sequence[_Block]) -> str | None:
 
 
 def _join(blocks: Sequence[_Block]) -> str:
-    """Join blocks: blank lines around code, single newlines between prose."""
+    """Join blocks using the separator recorded on each block."""
     parts: list[str] = []
     for index, block in enumerate(blocks):
-        if index == 0:
-            parts.append(block.text)
-            continue
-        previous = blocks[index - 1]
-        separator = "\n\n" if "code" in (previous.kind, block.kind) else "\n"
-        parts.append(separator + block.text)
+        parts.append(block.text if index == 0 else f"{block.separator}{block.text}")
     return "".join(parts)
 
 
+def _header_for_path(path: Sequence[str]) -> str:
+    return "[" + " > ".join(["FastAPI", *path]) + "]"
+
+
 def _header(section: Section) -> str:
-    return "[" + " > ".join(["FastAPI", *section.path]) + "]"
+    return _header_for_path(section.path)
+
+
+def _common_path(units: Sequence[_SectionBlocks]) -> list[str]:
+    if not units:
+        return []
+    paths = [unit.section.path for unit in units]
+    common: list[str] = []
+    for parts in zip(*paths, strict=False):
+        if len(set(parts)) != 1:
+            break
+        common.append(parts[0])
+    return common
+
+
+def _section_text(section: Section, blocks: Sequence[_Block]) -> str:
+    heading = f"{'#' * section.heading.level} {section.title}"
+    return f"{heading}\n\n{_join(blocks)}"
+
+
+def _section_units(
+    doc: ParsedDocument,
+    *,
+    child_tokens: int,
+    code_max_tokens: int,
+    release_notes_latest_versions: int | None,
+) -> list[_SectionBlocks]:
+    sections = doc.sections
+    if doc.doc_type == "release_notes":
+        sections = _release_note_sections(sections, release_notes_latest_versions)
+
+    units: list[_SectionBlocks] = []
+    for section in sections:
+        body = _section_body(section)
+        if not body:
+            continue
+        blocks = [
+            part
+            for block in _split_blocks(body)
+            for part in _split_block(block, child_tokens, code_max_tokens)
+        ]
+        if not blocks:
+            continue
+        heading = f"{'#' * section.heading.level} {section.title}"
+        tokens = sum(count_tokens(block.text) for block in blocks)
+        units.append(
+            _SectionBlocks(
+                section=section,
+                blocks=blocks,
+                tokens=tokens + count_tokens(heading) + 1,
+            )
+        )
+    return units
+
+
+def _release_note_sections(
+    sections: Sequence[Section],
+    limit: int | None,
+) -> list[Section]:
+    """Keep the newest N version sections of the release-notes changelog.
+
+    FastAPI's release notes are longer than the rest of the documentation
+    combined. Indexing every historical version would swamp normal queries, so
+    the normal index keeps the newest versions (``None`` means keep all).
+    """
+    if limit is None:
+        return list(sections)
+    versions = [
+        section
+        for section in sections
+        if section.heading.level == 2 and VERSION_HEADING_RE.match(section.title)
+    ]
+    if len(versions) <= limit:
+        return list(sections)
+
+    keep_versions = {id(section) for section in versions[: max(limit, 0)]}
+    kept: list[Section] = []
+    keep = False
+    for section in sections:
+        if section.heading.level == 1:
+            keep = True
+        elif section.heading.level == 2:
+            keep = (
+                id(section) in keep_versions
+                or section.title.strip() == LATEST_CHANGES_TITLE
+            )
+        if keep:
+            kept.append(section)
+    return kept
+
+
+def _batch_units(
+    units: Sequence[_SectionBlocks],
+    parent_tokens: int,
+) -> list[list[_SectionBlocks]]:
+    """Greedily pack consecutive whole sections into parent-sized batches."""
+    batches: list[list[_SectionBlocks]] = []
+    current: list[_SectionBlocks] = []
+    size = 0
+    for unit in units:
+        if unit.tokens > parent_tokens:
+            if current:
+                batches.append(current)
+                current = []
+                size = 0
+            batches.append([unit])
+            continue
+        if current and size + unit.tokens > parent_tokens:
+            batches.append(current)
+            current = []
+            size = 0
+        current.append(unit)
+        size += unit.tokens
+    if current:
+        batches.append(current)
+    return batches
+
+
+def _make_parent(
+    doc: ParsedDocument,
+    units: Sequence[_SectionBlocks],
+    blocks: Sequence[_Block],
+    *,
+    text: str,
+    parent_id: str,
+    parent_index: int,
+) -> Chunk:
+    section_path = _common_path(units)
+    single = units[0].section if len(units) == 1 else None
+    return Chunk(
+        chunk_id=parent_id,
+        doc_id=doc.doc_id,
+        parent_id=parent_id,
+        level="parent",
+        text=text,
+        embed_text=f"{_header_for_path(section_path)}\n{text}",
+        token_count=count_tokens(text),
+        section_path=section_path,
+        anchor=single.anchor if single else None,
+        url=(
+            f"{doc.url}#{single.anchor}"
+            if single and single.anchor
+            else doc.url
+        ),
+        content_type=_content_type(blocks),
+        code_language=_code_language(blocks),
+        is_deprecated=any(unit.section.is_deprecated for unit in units),
+        deprecation_hint=any(unit.section.deprecation_hint for unit in units),
+        section_hash=_batch_hash(doc, units),
+        chunk_index=parent_index,
+    )
+
+
+def _make_child(
+    doc: ParsedDocument,
+    unit: _SectionBlocks,
+    *,
+    parent_id: str,
+    child_index: int,
+    prefix: str,
+    blocks: Sequence[_Block],
+) -> Chunk:
+    section = unit.section
+    body_text = _join(blocks)
+    child_text = f"{prefix}\n\n{body_text}" if prefix else body_text
+    typed_blocks = (
+        [_Block(text=prefix, kind="prose"), *blocks] if prefix else list(blocks)
+    )
+    return Chunk(
+        chunk_id=f"{doc.doc_id}_{_section_hash(doc, section)}_{child_index}",
+        doc_id=doc.doc_id,
+        parent_id=parent_id,
+        level="child",
+        text=child_text,
+        embed_text=f"{_header(section)}\n{child_text}",
+        token_count=count_tokens(child_text),
+        section_path=list(section.path),
+        anchor=section.anchor,
+        url=f"{doc.url}#{section.anchor}" if section.anchor else doc.url,
+        content_type=_content_type(typed_blocks),
+        code_language=_code_language(typed_blocks),
+        is_deprecated=section.is_deprecated,
+        deprecation_hint=section.deprecation_hint,
+        section_hash=_section_hash(doc, section),
+        chunk_index=child_index,
+    )
 
 
 def chunk_document(
@@ -386,6 +615,7 @@ def chunk_document(
     child_tokens: int = 400,
     overlap_tokens: int = 64,
     code_max_tokens: int = CODE_BLOCK_MAX_TOKENS,
+    release_notes_latest_versions: int | None = 20,
 ) -> list[Chunk]:
     """Chunk one parsed document into parents followed by their children."""
     if child_tokens <= 0 or parent_tokens < child_tokens:
@@ -393,80 +623,85 @@ def chunk_document(
     if overlap_tokens < 0:
         raise ValueError("overlap_tokens must be >= 0")
 
+    units = _section_units(
+        doc,
+        child_tokens=child_tokens,
+        code_max_tokens=code_max_tokens,
+        release_notes_latest_versions=release_notes_latest_versions,
+    )
+    if not units:
+        return []
+
     chunks: list[Chunk] = []
-    for section in doc.sections:
-        body = _section_body(section)
-        if not body:
-            continue
-
-        blocks = [
-            part
-            for block in _split_blocks(body)
-            for part in _split_block(block, child_tokens, code_max_tokens)
-        ]
-        if not blocks:
-            continue
-
-        section_hash = _section_hash(doc, section)
-        header = _header(section)
-        url = f"{doc.url}#{section.anchor}" if section.anchor else doc.url
-        child_index = 0
-
-        for parent_index, parent_blocks in enumerate(_pack(blocks, parent_tokens)):
-            parent_text = _join(parent_blocks)
-            parent_id = f"{doc.doc_id}_{section_hash}_p{parent_index}"
-            chunks.append(
-                Chunk(
-                    chunk_id=parent_id,
-                    doc_id=doc.doc_id,
-                    parent_id=parent_id,
-                    level="parent",
-                    text=parent_text,
-                    embed_text=f"{header}\n{parent_text}",
-                    token_count=count_tokens(parent_text),
-                    section_path=list(section.path),
-                    anchor=section.anchor,
-                    url=url,
-                    content_type=_content_type(parent_blocks),
-                    code_language=_code_language(parent_blocks),
-                    is_deprecated=section.is_deprecated,
-                    section_hash=section_hash,
-                    chunk_index=parent_index,
-                )
-            )
-
-            for prefix, child_blocks in _pack_children(
-                parent_blocks,
-                child_tokens,
-                overlap_tokens,
-            ):
-                body_text = _join(child_blocks)
-                child_text = f"{prefix}\n\n{body_text}" if prefix else body_text
-                typed_blocks = (
-                    [_Block(text=prefix, kind="prose"), *child_blocks]
-                    if prefix
-                    else child_blocks
-                )
+    parent_index = 0
+    for batch in _batch_units(units, parent_tokens):
+        # A single oversized section is packed into several parents, then its
+        # children stay within those parent groups.
+        if len(batch) == 1 and batch[0].tokens > parent_tokens:
+            unit = batch[0]
+            child_index = 0
+            for parent_blocks in _pack(unit.blocks, parent_tokens):
+                parent_id = f"{doc.doc_id}_p{parent_index}"
+                parent_text = _section_text(unit.section, parent_blocks)
                 chunks.append(
-                    Chunk(
-                        chunk_id=f"{doc.doc_id}_{section_hash}_{child_index}",
-                        doc_id=doc.doc_id,
+                    _make_parent(
+                        doc,
+                        batch,
+                        parent_blocks,
+                        text=parent_text,
                         parent_id=parent_id,
-                        level="child",
-                        text=child_text,
-                        embed_text=f"{header}\n{child_text}",
-                        token_count=count_tokens(child_text),
-                        section_path=list(section.path),
-                        anchor=section.anchor,
-                        url=url,
-                        content_type=_content_type(typed_blocks),
-                        code_language=_code_language(typed_blocks),
-                        is_deprecated=section.is_deprecated,
-                        section_hash=section_hash,
-                        chunk_index=child_index,
+                        parent_index=parent_index,
+                    )
+                )
+                for prefix, child_blocks in _pack_children(
+                    parent_blocks, child_tokens, overlap_tokens
+                ):
+                    chunks.append(
+                        _make_child(
+                            doc,
+                            unit,
+                            parent_id=parent_id,
+                            child_index=child_index,
+                            prefix=prefix,
+                            blocks=child_blocks,
+                        )
+                    )
+                    child_index += 1
+                parent_index += 1
+            continue
+
+        parent_id = f"{doc.doc_id}_p{parent_index}"
+        all_blocks = [block for unit in batch for block in unit.blocks]
+        parent_text = "\n\n".join(
+            _section_text(unit.section, unit.blocks) for unit in batch
+        )
+        chunks.append(
+            _make_parent(
+                doc,
+                batch,
+                all_blocks,
+                text=parent_text,
+                parent_id=parent_id,
+                parent_index=parent_index,
+            )
+        )
+        for unit in batch:
+            child_index = 0
+            for prefix, child_blocks in _pack_children(
+                unit.blocks, child_tokens, overlap_tokens
+            ):
+                chunks.append(
+                    _make_child(
+                        doc,
+                        unit,
+                        parent_id=parent_id,
+                        child_index=child_index,
+                        prefix=prefix,
+                        blocks=child_blocks,
                     )
                 )
                 child_index += 1
+        parent_index += 1
 
     return chunks
 
@@ -478,6 +713,7 @@ def chunk_documents(
     child_tokens: int = 400,
     overlap_tokens: int = 64,
     code_max_tokens: int = CODE_BLOCK_MAX_TOKENS,
+    release_notes_latest_versions: int | None = 20,
 ) -> list[Chunk]:
     """Chunk every document, preserving document order."""
     chunks: list[Chunk] = []
@@ -489,6 +725,7 @@ def chunk_documents(
                 child_tokens=child_tokens,
                 overlap_tokens=overlap_tokens,
                 code_max_tokens=code_max_tokens,
+                release_notes_latest_versions=release_notes_latest_versions,
             )
         )
     return chunks

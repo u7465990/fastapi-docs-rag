@@ -28,6 +28,7 @@ def main() -> None:
     parser.add_argument("--child-tokens", type=int, default=400)
     parser.add_argument("--overlap-tokens", type=int, default=64)
     parser.add_argument("--code-max-tokens", type=int, default=800)
+    parser.add_argument("--release-notes-versions", type=int, default=20)
     args = parser.parse_args()
 
     repo_root = args.repo
@@ -41,6 +42,7 @@ def main() -> None:
             child_tokens=args.child_tokens,
             overlap_tokens=args.overlap_tokens,
             code_max_tokens=args.code_max_tokens,
+            release_notes_latest_versions=args.release_notes_versions,
         )
     ]
     parents = [chunk for chunk in chunks if chunk.level == "parent"]
@@ -53,6 +55,7 @@ def main() -> None:
     print(f"content:     {dict(Counter(chunk.content_type for chunk in children))}")
     print(f"languages:   {dict(Counter(c.code_language for c in children if c.code_language))}")
     print(f"deprecated children: {sum(1 for chunk in children if chunk.is_deprecated)}")
+    print(f"deprecation-hint children: {sum(1 for chunk in children if chunk.deprecation_hint)}")
     print(f"children/parent: {len(children) / max(len(parents), 1):.2f}")
 
     oversized = [chunk for chunk in children if chunk.token_count > args.child_tokens]

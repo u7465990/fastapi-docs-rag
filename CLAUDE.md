@@ -110,6 +110,7 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 **版本与增量（项目签名）**
 - 变更检测优先级：Git commit diff > `content_sha256`。FastAPI 文档没有可用的 sitemap 版本机制，不引入 sitemap 分支。
 - 版本字段必须分开：`docs_version`（文档快照对应的 FastAPI 版本，来自 release notes / git tag；未知写 `"unknown"`）、`source_ref`（commit SHA）、`index_build_id`（构建标识）。
+- release notes 只保留最近 `RELEASE_NOTES_LATEST_VERSIONS`（默认 20）个版本进入普通索引；历史版本靠 git tag 重建，不要让 changelog 淹没普通问答。
 - 文档只维护“最新版”页面；历史版本通过 **git tag checkout** 重建快照，不要假设仓库里存在按版本分的文档目录。
 - 增量重建：只重嵌入变更 chunk，复用 embedding 缓存；全量点写入新 collection，alias 原子切换，保留上一版本可回滚。
 - 废弃 API 不立即物理删除：标 `is_deprecated=true`，检索降权 / 按需过滤；确认删除后再清理。典型例子：`@app.on_event` → `lifespan`。
@@ -145,7 +146,7 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 
 **配置与安全**
 - 所有配置走 `.env` + Pydantic Settings；`.env.example` 入库，`.env` 不入库；启动时校验必需配置，缺项 fail-fast。
-- `.env.example` 草案见设计文档附录 A，关键变量：`LLM_*`、`EMBEDDING_*`、`QDRANT_*`、`DOCS_REPO_URL`、`DOCS_REPO_BRANCH`、`INDEX_REFRESH_CRON`、`STALENESS_THRESHOLD_HOURS`、`DEFAULT_DOCS_VERSION`、`EMBEDDING_CACHE_DIR`、`REDIS_URL`、`LANGSMITH_*`、`RETRIEVAL_*`、`RERANK_TOP_K`、`FINAL_TOP_K`、`ADMIN_API_KEY`、`RATE_LIMIT_*`。
+- `.env.example` 草案见设计文档附录 A，关键变量：`LLM_*`、`EMBEDDING_*`、`QDRANT_*`、`DOCS_REPO_URL`、`DOCS_REPO_BRANCH`、`INDEX_REFRESH_CRON`、`STALENESS_THRESHOLD_HOURS`、`DEFAULT_DOCS_VERSION`、`RELEASE_NOTES_LATEST_VERSIONS`、`EMBEDDING_CACHE_DIR`、`REDIS_URL`、`LANGSMITH_*`、`RETRIEVAL_*`、`RERANK_TOP_K`、`FINAL_TOP_K`、`ADMIN_API_KEY`、`RATE_LIMIT_*`。
 - 日志不打印 API Key、完整 prompt、用户敏感信息；admin 接口单独鉴权；限流按 IP / session / API key。
 - 采集遵守 `robots.txt`，限速约 1 req/s，不重新分发全文；FastAPI 文档仓库为 MIT，但仍只用于学习演示。
 
