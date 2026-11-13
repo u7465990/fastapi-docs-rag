@@ -12,6 +12,8 @@ def test_defaults() -> None:
     assert settings.qdrant_collection == "fastapi_docs_current"
     assert settings.docs_checkout_dir == Path("data/raw/fastapi")
     assert settings.embedding_dim == 1024
+    assert settings.embedding_batch_size == 32
+    assert settings.release_notes_latest_versions == 20
     assert settings.missing_required() == ["LLM_API_KEY", "EMBEDDING_API_KEY"]
 
 

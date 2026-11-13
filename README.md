@@ -4,7 +4,7 @@
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Phase 0 环境与骨架已完成，解析器与父子切分器可用（含单元测试）；下一步是 embedding 与索引写入。
+> 当前状态：Phase 1 进行中。解析、父子切分、embedding 客户端和 Qdrant indexer 已可用（含单元测试）；下一步是 dense retrieval 与问答 API。
 
 ## 数据源
 
@@ -43,9 +43,14 @@ cp .env.example .env                # Windows PowerShell: Copy-Item .env.example
 # 3. 依赖服务（只起 Qdrant + Redis）
 docker compose up -d qdrant redis
 
-# 4. 启动 API
+# 4. 建索引（需要 EMBEDDING_API_KEY，且 Qdrant 已启动）
+uv run --no-sync python scripts/ingest.py
+
+# 5. 启动 API
 uv run --no-sync python -m langchain_rag.cli
 ```
+
+索引默认写入临时 collection `fastapi_docs_build_<ts>`，成功后原子切换 alias `fastapi_docs_current`；旧 build 保留用于回滚。只想看切分和版本字段时加 `--dry-run`，不调用 embedding。
 
 常用命令：
 

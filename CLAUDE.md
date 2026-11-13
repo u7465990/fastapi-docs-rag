@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-**Phase 0 骨架已落地 + 数据源已确认**：仓库已有 `pyproject.toml` + `uv.lock`、`src/langchain_rag/`（config / api / cli / ingestion.parser / indexing.chunker）、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。embedding、索引写入、检索、生成、评估与前端尚未实现。
+**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/langchain_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer）、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。检索、生成、评估与前端尚未实现。
 
 FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库；当前 C 工作区是**文件快照，不含 `.git`**，实现增量索引前需按 README 重建 sparse checkout）：
 
@@ -63,8 +63,9 @@ npm run dev     # Vite dev server: http://localhost:5173
 npm run build   # 生产静态文件
 npm run lint
 
-# 索引与评估脚本（尚未实现）
+# 索引（ingest 已实现；其余增量 / 评估脚本尚未实现）
 uv run --no-sync python scripts/ingest.py
+uv run --no-sync python scripts/ingest.py --dry-run   # 只看解析/切分/版本字段
 uv run --no-sync python scripts/update_index.py     # 定时增量更新（项目签名）
 uv run --no-sync python scripts/diff_report.py      # 变更 / 陈旧度报告
 uv run --no-sync python scripts/rebuild_index.py
@@ -146,7 +147,7 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 
 **配置与安全**
 - 所有配置走 `.env` + Pydantic Settings；`.env.example` 入库，`.env` 不入库；启动时校验必需配置，缺项 fail-fast。
-- `.env.example` 草案见设计文档附录 A，关键变量：`LLM_*`、`EMBEDDING_*`、`QDRANT_*`、`DOCS_REPO_URL`、`DOCS_REPO_BRANCH`、`INDEX_REFRESH_CRON`、`STALENESS_THRESHOLD_HOURS`、`DEFAULT_DOCS_VERSION`、`RELEASE_NOTES_LATEST_VERSIONS`、`EMBEDDING_CACHE_DIR`、`REDIS_URL`、`LANGSMITH_*`、`RETRIEVAL_*`、`RERANK_TOP_K`、`FINAL_TOP_K`、`ADMIN_API_KEY`、`RATE_LIMIT_*`。
+- `.env.example` 草案见设计文档附录 A，关键变量：`LLM_*`、`EMBEDDING_*`（含 `EMBEDDING_BATCH_SIZE`）、`QDRANT_*`、`DOCS_REPO_URL`、`DOCS_REPO_BRANCH`、`INDEX_REFRESH_CRON`、`STALENESS_THRESHOLD_HOURS`、`DEFAULT_DOCS_VERSION`、`RELEASE_NOTES_LATEST_VERSIONS`、`EMBEDDING_CACHE_DIR`、`REDIS_URL`、`LANGSMITH_*`、`RETRIEVAL_*`、`RERANK_TOP_K`、`FINAL_TOP_K`、`ADMIN_API_KEY`、`RATE_LIMIT_*`。
 - 日志不打印 API Key、完整 prompt、用户敏感信息；admin 接口单独鉴权；限流按 IP / session / API key。
 - 采集遵守 `robots.txt`，限速约 1 req/s，不重新分发全文；FastAPI 文档仓库为 MIT，但仍只用于学习演示。
 
