@@ -1,4 +1,4 @@
-.PHONY: install install-rag dev up down logs lint format test test-unit check-parser check-chunker check-providers ingest smoke-search
+.PHONY: install install-rag dev up down logs lint format test test-unit check-parser check-chunker check-providers ingest smoke-search load-search
 
 UV ?= uv
 # 依赖由 make install 同步；运行时不再 sync，避免把 rag extra 卸掉
@@ -14,13 +14,13 @@ dev:
 	$(RUN) python -m langchain_rag.cli
 
 up:
-	docker compose up -d qdrant redis
+	docker compose up -d --build
 
 down:
 	docker compose down
 
 logs:
-	docker compose logs -f qdrant redis
+	docker compose logs -f qdrant redis api
 
 lint:
 	$(RUN) ruff check .
@@ -49,3 +49,6 @@ ingest:
 
 smoke-search:
 	$(RUN) python scripts/smoke_search.py
+
+load-search:
+	$(RUN) python scripts/load_search.py

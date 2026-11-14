@@ -41,8 +41,9 @@ cp .env.example .env                # Windows PowerShell: Copy-Item .env.example
 # 然后填入 LLM_API_KEY、EMBEDDING_API_KEY
 uv run --no-sync python scripts/check_providers.py   # 先验证 Key / 模型 / 端点
 
-# 3. 依赖服务（只起 Qdrant + Redis）
-docker compose up -d qdrant redis
+# 3. 启动 Qdrant + Redis + API（首次会构建 API 镜像）
+docker compose up -d --build
+docker compose logs -f api
 
 # 4. 建索引（需要 EMBEDDING_API_KEY，且 Qdrant 已启动）
 uv run --no-sync python scripts/ingest.py
@@ -50,13 +51,17 @@ uv run --no-sync python scripts/ingest.py
 # 5. 用固定问题跑检索 smoke
 uv run --no-sync python scripts/smoke_search.py
 
-# 6. 启动 API
-uv run --no-sync python -m langchain_rag.cli
-
-# 7. 另开终端启动前端
+# 6. 另开终端启动前端
 cd apps/web
 npm install
 npm run dev     # http://localhost:5173
+```
+
+API 默认跑在 Docker 里。调试时也可以停掉 api 容器，改用宿主机：
+
+```bash
+docker compose stop api
+uv run --no-sync python -m langchain_rag.cli
 ```
 
 索引默认写入临时 collection `fastapi_docs_build_<ts>`，成功后原子切换 alias `fastapi_docs_current`；旧 build 保留用于回滚。只想看切分和版本字段时加 `--dry-run`，不调用 embedding。
@@ -70,6 +75,7 @@ uv run --no-sync ruff check .
 uv run --no-sync mypy src
 uv run --no-sync python scripts/check_parser.py   # 解析器冒烟统计
 uv run --no-sync python scripts/check_chunker.py  # 切分统计（token 分布 / 代码块 / 废弃）
+uv run --no-sync python scripts/load_search.py    # 8 路并发检索延迟
 ```
 
 `make install` / `make test` / `make lint` 是上面的薄封装。

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/langchain_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense retrieval、`/api/v1/search`、`/api/v1/chat` 与前端聊天页已实现；SSE、多轮、评估与 Docker API 化尚未实现。
+**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/langchain_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense retrieval、`/api/v1/search`、`/api/v1/chat`、前端聊天页与本地 Docker API 已实现；SSE、多轮、评估与并发调优尚未实现。
 
 FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库；当前 C 工作区是**文件快照，不含 `.git`**，实现增量索引前需按 README 重建 sparse checkout）：
 
@@ -50,11 +50,12 @@ uv sync --extra dev                 # core + dev；接 LangChain 时加 --extra 
 git -C data/raw/fastapi pull --ff-only
 git -C data/raw/fastapi rev-parse HEAD
 
-# 本地依赖服务（只起 Qdrant + Redis）
-docker compose up -d qdrant redis
+# 本地依赖服务 + API（Docker）
+docker compose up -d --build
+docker compose logs -f api
 # Qdrant dashboard: http://localhost:6333/dashboard
 
-# API（宿主机运行，不进 Docker）
+# 调试时改宿主机运行（先 docker compose stop api）
 uv run --no-sync python -m langchain_rag.cli
 
 # 前端（Vite + React，目录创建后）
@@ -68,6 +69,7 @@ uv run --no-sync python scripts/check_providers.py   # 验证 embedding / chat K
 uv run --no-sync python scripts/ingest.py
 uv run --no-sync python scripts/ingest.py --dry-run   # 只看解析/切分/版本字段
 uv run --no-sync python scripts/smoke_search.py       # 5 条固定问题的检索 smoke
+uv run --no-sync python scripts/load_search.py        # 8 路并发检索延迟
 uv run --no-sync python scripts/update_index.py     # 定时增量更新（项目签名）
 uv run --no-sync python scripts/diff_report.py      # 变更 / 陈旧度报告
 uv run --no-sync python scripts/rebuild_index.py
@@ -157,7 +159,7 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 
 - Windows 10，i7-11390H（4C/8T），16GB RAM；Docker Desktop 已运行，国内镜像已配置。
 - **不能跑本地大模型**（MX450 2GB VRAM）：LLM 走云端 API，本地只做 CPU embedding / rerank。
-- **只把 Qdrant + Redis 放进 Docker**（端口 6333/6334/6379）；FastAPI、采集、评估脚本跑宿主机；不要引入 Langfuse 全家桶（先使用 LangSmith 云端）。
+- Qdrant / Redis / API 都在 Docker Compose 中（端口 6333/6334/6379/8000）；采集、评估脚本在宿主机运行。调试 API 时可停掉容器改用宿主机 uvicorn；不要引入 Langfuse 全家桶（先使用 LangSmith 云端）。
 - 使用仓库内 `.venv`（uv 管理，CPython 3.12），不要污染 `comp4528` 等课程环境。
 - 工作区在 `C:` 盘上，DSH 会话为完全访问权限；`uv sync`、`pytest`、`git commit` 等写盘/联网命令可直接执行。
 - **不要复用 Claude Code 的 `ANTHROPIC_*` 环境变量**作为应用 Key；使用独立项目 Key 写入 `.env`。
