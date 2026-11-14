@@ -66,6 +66,19 @@ uv run --no-sync python -m langchain_rag.cli
 
 索引默认写入临时 collection `fastapi_docs_build_<ts>`，成功后原子切换 alias `fastapi_docs_current`；旧 build 保留用于回滚。只想看切分和版本字段时加 `--dry-run`，不调用 embedding。
 
+### LLM 额度锁
+
+API 用 Redis 做应用层每日额度锁，调用 LLM 前先预占 token，超限直接返回 429，不再请求模型：
+
+```dotenv
+LLM_MAX_TOKENS=1024
+LLM_MAX_TOKENS_CAP=512
+LLM_DAILY_REQUEST_LIMIT=50
+LLM_DAILY_TOKEN_BUDGET=300000
+```
+
+`LLM_MAX_TOKENS_CAP` 是单次硬上限；后两项是每天请求数 / token 预算。Redis 不可用时返回 503，不会绕过额度直接调用模型。
+
 常用命令：
 
 ```bash

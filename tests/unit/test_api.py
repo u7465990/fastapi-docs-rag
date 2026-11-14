@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 import langchain_rag.api as api
 from langchain_rag.api import app
 from langchain_rag.generation.chat import REFUSAL
+from langchain_rag.generation.quota import QuotaExceeded
 from langchain_rag.retrieval.dense import SearchHit
 
 client = TestClient(app)
@@ -16,6 +17,16 @@ class FakeChatClient:
     def complete(self, messages):
         assert messages
         return "答案 [1]"
+
+
+class FakeQuota:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+
+    def reserve(self, estimated_tokens: int) -> None:
+        assert estimated_tokens > 0
+        if self.error is not None:
+            raise self.error
 
 
 class FakeRetriever:
@@ -82,6 +93,7 @@ def test_search_endpoint_rejects_empty_query() -> None:
 def test_chat_endpoint_returns_answer_and_sources(monkeypatch) -> None:
     monkeypatch.setattr(api, "_get_retriever", lambda: FakeRetriever())
     monkeypatch.setattr(api, "_get_chat_client", lambda: FakeChatClient())
+    monkeypatch.setattr(api, "_get_quota_guard", lambda: FakeQuota())
 
     response = client.post(
         "/api/v1/chat",
@@ -95,6 +107,25 @@ def test_chat_endpoint_returns_answer_and_sources(monkeypatch) -> None:
     assert len(body["sources"]) == 1
     assert body["sources"][0]["index"] == 1
     assert body["sources"][0]["url"].endswith("/tutorial/dependencies/")
+
+
+def test_chat_endpoint_returns_429_when_quota_exceeded(monkeypatch) -> None:
+    monkeypatch.setattr(api, "_get_retriever", lambda: FakeRetriever())
+    monkeypatch.setattr(
+        api,
+        "_get_chat_client",
+        lambda: (_ for _ in ()).throw(AssertionError("LLM must not be called")),
+    )
+    monkeypatch.setattr(
+        api,
+        "_get_quota_guard",
+        lambda: FakeQuota(QuotaExceeded("quota exhausted")),
+    )
+
+    response = client.post("/api/v1/chat", json={"query": "Depends 怎么用？"})
+
+    assert response.status_code == 429
+    assert "quota" in response.json()["detail"]
 
 
 def test_chat_endpoint_refuses_when_no_context(monkeypatch) -> None:

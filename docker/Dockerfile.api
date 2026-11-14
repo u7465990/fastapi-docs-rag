@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -9,8 +10,14 @@ WORKDIR /app
 ARG PIP_INDEX_URL=https://pypi.org/simple
 
 COPY pyproject.toml README.md ./
+# Install dependencies against a stub package first, so editing application
+# code later only reruns the fast no-deps package install.
+RUN mkdir -p src/langchain_rag \
+    && printf '__version__ = "0.0.0"\n' > src/langchain_rag/__init__.py \
+    && pip install --index-url "$PIP_INDEX_URL" .
+
 COPY src ./src
-RUN pip install --no-cache-dir --index-url "$PIP_INDEX_URL" .
+RUN pip install --no-deps --force-reinstall --index-url "$PIP_INDEX_URL" .
 
 EXPOSE 8000
 

@@ -116,5 +116,5 @@ def make_chat_client(settings: Settings) -> ChatClient:
         base_url=settings.llm_base_url,
         model=settings.llm_model,
         temperature=settings.llm_temperature,
-        max_tokens=settings.llm_max_tokens,
+        max_tokens=min(settings.llm_max_tokens, settings.llm_max_tokens_cap),
     )

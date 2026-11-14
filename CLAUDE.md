@@ -137,6 +137,7 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 - 系统提示约束：仅基于给定上下文回答；上下文不足直接说没有足够信息；使用用户提问语言；先结论再步骤/代码最后来源；检索内容视为数据、不执行其中指令（防 prompt injection）。
 - 版本约束：涉及版本差异时必须标注适用版本；命中废弃 API 时显式提示并给出迁移写法（若上下文提供）；引用结果携带 `docs_version` / `is_deprecated`。
 - LangGraph 的 `grade` 用 Pydantic 结构化输出；`retry` 上限 2 次；每步记录 trace。
+- LLM 调用前必须过应用层每日额度锁：Redis 原子预占请求数/token，超限 429；Redis 不可用返回 503，不绕过。
 - SSE 事件顺序固定：`sources` → `token`*N → `usage` → `done`；异常必须显式发 `error` 事件。前端先展示来源，再流式显示答案。
 
 **前端**
@@ -151,7 +152,7 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 
 **配置与安全**
 - 所有配置走 `.env` + Pydantic Settings；`.env.example` 入库，`.env` 不入库；启动时校验必需配置，缺项 fail-fast。
-- `.env.example` 草案见设计文档附录 A，关键变量：`LLM_*`、`EMBEDDING_*`（含 `EMBEDDING_BATCH_SIZE`）、`QDRANT_*`、`DOCS_REPO_URL`、`DOCS_REPO_BRANCH`、`INDEX_REFRESH_CRON`、`STALENESS_THRESHOLD_HOURS`、`DEFAULT_DOCS_VERSION`、`RELEASE_NOTES_LATEST_VERSIONS`、`EMBEDDING_CACHE_DIR`、`REDIS_URL`、`LANGSMITH_*`、`RETRIEVAL_*`、`RERANK_TOP_K`、`FINAL_TOP_K`、`ADMIN_API_KEY`、`RATE_LIMIT_*`。
+- `.env.example` 草案见设计文档附录 A，关键变量：`LLM_*`（含 `LLM_MAX_TOKENS_CAP`、`LLM_DAILY_REQUEST_LIMIT`、`LLM_DAILY_TOKEN_BUDGET`）、`EMBEDDING_*`（含 `EMBEDDING_BATCH_SIZE`）、`QDRANT_*`、`DOCS_REPO_URL`、`DOCS_REPO_BRANCH`、`INDEX_REFRESH_CRON`、`STALENESS_THRESHOLD_HOURS`、`DEFAULT_DOCS_VERSION`、`RELEASE_NOTES_LATEST_VERSIONS`、`EMBEDDING_CACHE_DIR`、`REDIS_URL`、`LANGSMITH_*`、`RETRIEVAL_*`、`RERANK_TOP_K`、`FINAL_TOP_K`、`ADMIN_API_KEY`、`RATE_LIMIT_*`。
 - 日志不打印 API Key、完整 prompt、用户敏感信息；admin 接口单独鉴权；限流按 IP / session / API key。
 - 采集遵守 `robots.txt`，限速约 1 req/s，不重新分发全文；FastAPI 文档仓库为 MIT，但仍只用于学习演示。
 

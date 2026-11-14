@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.deepseek.com/v1"
     llm_temperature: float = 0.1
     llm_max_tokens: int = 2048
+    # Hard per-request output cap and app-level daily quota. These are
+    # independent of provider billing: they stop spend before it happens.
+    llm_max_tokens_cap: int = 512
+    llm_daily_request_limit: int = 50
+    llm_daily_token_budget: int = 300_000
 
     # Embedding
     embedding_provider: str = "openai_compatible"

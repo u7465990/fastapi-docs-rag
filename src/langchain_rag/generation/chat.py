@@ -45,6 +45,30 @@ def build_context(hits: Sequence[SearchHit]) -> str:
     return "\n\n".join(blocks)
 
 
+def build_messages(
+    query: str,
+    hits: Sequence[SearchHit],
+) -> list[dict[str, str]]:
+    user_prompt = (
+        f"用户问题：{query}\n\n"
+        f"文档上下文：\n{build_context(hits)}\n\n"
+        "请按系统规则回答。"
+    )
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
+
+
+def estimate_chat_tokens(
+    messages: Sequence[dict[str, str]],
+    max_output_tokens: int,
+) -> int:
+    """Conservative character-based estimate used for quota reservation."""
+    chars = sum(len(message["content"]) for message in messages)
+    return max(1, chars // 3) + max(1, max_output_tokens)
+
+
 def generate_answer(
     query: str,
     hits: Sequence[SearchHit],
@@ -52,14 +76,4 @@ def generate_answer(
 ) -> str:
     if not hits:
         return REFUSAL
-    user_prompt = (
-        f"用户问题：{query}\n\n"
-        f"文档上下文：\n{build_context(hits)}\n\n"
-        "请按系统规则回答。"
-    )
-    return client.complete(
-        [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ]
-    )
+    return client.complete(build_messages(query, hits))

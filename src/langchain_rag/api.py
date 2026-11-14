@@ -15,8 +15,18 @@ from qdrant_client import QdrantClient
 
 from langchain_rag import __version__
 from langchain_rag.config import Settings, get_settings
-from langchain_rag.generation.chat import REFUSAL, generate_answer
+from langchain_rag.generation.chat import (
+    REFUSAL,
+    build_messages,
+    estimate_chat_tokens,
+)
 from langchain_rag.generation.llm import ChatClient, make_chat_client
+from langchain_rag.generation.quota import (
+    DailyQuota,
+    QuotaExceeded,
+    QuotaUnavailable,
+    make_daily_quota,
+)
 from langchain_rag.indexing.embedder import make_embedder
 from langchain_rag.retrieval.dense import DenseRetriever, SearchHit
 
@@ -165,6 +175,11 @@ def _get_chat_client() -> ChatClient:
     return make_chat_client(get_settings())
 
 
+@lru_cache(maxsize=1)
+def _get_quota_guard() -> DailyQuota:
+    return make_daily_quota(get_settings())
+
+
 @app.post("/api/v1/search", response_model=SearchResponse)
 def search(request: SearchRequest) -> SearchResponse:
     """Dense retrieval over the current index; no generation."""
@@ -216,17 +231,32 @@ def chat(request: ChatRequest) -> ChatResponse:
             detail="retrieval service unavailable",
         ) from exc
 
+    settings = get_settings()
     if not hits:
         return ChatResponse(
             query=request.query,
             answer=REFUSAL,
-            model=get_settings().llm_model,
+            model=settings.llm_model,
             sources=[],
         )
 
+    messages = build_messages(request.query, hits)
+    max_output = min(settings.llm_max_tokens, settings.llm_max_tokens_cap)
+    try:
+        _get_quota_guard().reserve(
+            estimate_chat_tokens(messages, max_output)
+        )
+    except QuotaExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except QuotaUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="quota service unavailable",
+        ) from exc
+
     try:
         client = _get_chat_client()
-        answer = generate_answer(request.query, hits, client)
+        answer = client.complete(messages)
     except Exception as exc:  # noqa: BLE001 - provider failures become 503
         raise HTTPException(
             status_code=503,
