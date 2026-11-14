@@ -1,4 +1,4 @@
-.PHONY: install install-rag dev up down logs lint format test test-unit check-parser check-chunker check-providers ingest smoke-search load-search
+.PHONY: install install-rag dev up down logs lint format test test-unit check-parser check-chunker check-providers ingest smoke-search load-search web-build
 
 UV ?= uv
 # 依赖由 make install 同步；运行时不再 sync，避免把 rag extra 卸掉
@@ -13,8 +13,11 @@ install-rag:
 dev:
 	$(RUN) python -m langchain_rag.cli
 
-up:
+up: web-build
 	docker compose up -d --build
+
+web-build:
+	cd apps/web && npm run build
 
 down:
 	docker compose down

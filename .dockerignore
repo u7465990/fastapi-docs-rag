@@ -11,7 +11,6 @@ __pycache__
 data
 node_modules
 apps/web/node_modules
-apps/web/dist
 apps-web-chat.png
 docs
 scripts

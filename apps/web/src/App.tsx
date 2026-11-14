@@ -2,7 +2,9 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+// Empty means same-origin `/api`, which works behind nginx and Vite's proxy.
+// Capacitor/mobile builds can set VITE_API_BASE_URL to the public API origin.
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
 type Source = {
   index: number;

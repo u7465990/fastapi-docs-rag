@@ -4,7 +4,7 @@
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）和最小聊天前端已可用；下一步是 Docker 化与并发测试。
+> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、Docker API 和 Nginx 静态托管的聊天页已可用；下一步是评估与多端壳。
 
 ## 数据源
 
@@ -51,11 +51,16 @@ uv run --no-sync python scripts/ingest.py
 # 5. 用固定问题跑检索 smoke
 uv run --no-sync python scripts/smoke_search.py
 
-# 6. 另开终端启动前端
+# 6. 构建前端并由 nginx 托管（生产模式，不用 vite dev）
 cd apps/web
 npm install
-npm run dev     # http://localhost:5173
+npm run build
+cd ../..
+docker compose up -d --build web
+# 打开 http://localhost:8080
 ```
+
+开发时仍可单独跑 `cd apps/web && npm run dev`，Vite 会把 `/api` 代理到 `127.0.0.1:8000`；这个 5173 端口只用于本机开发，不要暴露到公网。
 
 API 默认跑在 Docker 里。调试时也可以停掉 api 容器，改用宿主机：
 
