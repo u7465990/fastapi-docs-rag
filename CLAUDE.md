@@ -64,6 +64,7 @@ npm run build   # 生产静态文件
 npm run lint
 
 # 索引（ingest 已实现；其余增量 / 评估脚本尚未实现）
+uv run --no-sync python scripts/check_providers.py   # 验证 embedding / chat Key
 uv run --no-sync python scripts/ingest.py
 uv run --no-sync python scripts/ingest.py --dry-run   # 只看解析/切分/版本字段
 uv run --no-sync python scripts/smoke_search.py       # 5 条固定问题的检索 smoke

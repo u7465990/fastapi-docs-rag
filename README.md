@@ -39,6 +39,7 @@ uv sync --extra dev --extra rag     # 接 LangChain / LangGraph 时再装
 # 2. 配置
 cp .env.example .env                # Windows PowerShell: Copy-Item .env.example .env
 # 然后填入 LLM_API_KEY、EMBEDDING_API_KEY
+uv run --no-sync python scripts/check_providers.py   # 先验证 Key / 模型 / 端点
 
 # 3. 依赖服务（只起 Qdrant + Redis）
 docker compose up -d qdrant redis
