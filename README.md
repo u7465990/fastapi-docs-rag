@@ -4,7 +4,7 @@
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense retrieval（`/api/v1/search`）和 RAG 问答（`/api/v1/chat`）已可用；下一步是前端聊天页。
+> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）和最小聊天前端已可用；下一步是 Docker 化与并发测试。
 
 ## 数据源
 
@@ -52,6 +52,11 @@ uv run --no-sync python scripts/smoke_search.py
 
 # 6. 启动 API
 uv run --no-sync python -m langchain_rag.cli
+
+# 7. 另开终端启动前端
+cd apps/web
+npm install
+npm run dev     # http://localhost:5173
 ```
 
 索引默认写入临时 collection `fastapi_docs_build_<ts>`，成功后原子切换 alias `fastapi_docs_current`；旧 build 保留用于回滚。只想看切分和版本字段时加 `--dry-run`，不调用 embedding。

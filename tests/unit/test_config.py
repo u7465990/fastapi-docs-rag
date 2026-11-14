@@ -14,6 +14,7 @@ def test_defaults() -> None:
     assert settings.embedding_dim == 1024
     assert settings.embedding_batch_size == 10
     assert settings.release_notes_latest_versions == 20
+    assert "http://127.0.0.1:5173" in settings.cors_origins
     assert settings.missing_required() == ["LLM_API_KEY", "EMBEDDING_API_KEY"]
 
 

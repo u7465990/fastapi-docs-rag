@@ -28,9 +28,15 @@ app = FastAPI(
     description="Version-aware RAG over FastAPI documentation.",
 )
 
+_cors_origins = list(_settings.cors_origins)
+if _settings.environment == "dev":
+    for _origin in ("http://localhost:5173", "http://127.0.0.1:5173"):
+        if _origin not in _cors_origins:
+            _cors_origins.append(_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_settings.cors_origins,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

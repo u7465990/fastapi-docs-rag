@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/langchain_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense retrieval、`/api/v1/search` 与 `/api/v1/chat` 已实现；前端、评估与流式输出尚未实现。
+**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/langchain_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense retrieval、`/api/v1/search`、`/api/v1/chat` 与前端聊天页已实现；SSE、多轮、评估与 Docker API 化尚未实现。
 
 FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库；当前 C 工作区是**文件快照，不含 `.git`**，实现增量索引前需按 README 重建 sparse checkout）：
 
