@@ -4,7 +4,7 @@
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Phase 1 进行中。解析、父子切分、embedding 客户端和 Qdrant indexer 已可用（含单元测试）；下一步是 dense retrieval 与问答 API。
+> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer 与 dense retrieval（`/api/v1/search`）已可用；下一步是 LLM 生成与前端。
 
 ## 数据源
 
@@ -46,7 +46,10 @@ docker compose up -d qdrant redis
 # 4. 建索引（需要 EMBEDDING_API_KEY，且 Qdrant 已启动）
 uv run --no-sync python scripts/ingest.py
 
-# 5. 启动 API
+# 5. 用固定问题跑检索 smoke
+uv run --no-sync python scripts/smoke_search.py
+
+# 6. 启动 API
 uv run --no-sync python -m langchain_rag.cli
 ```
 

@@ -1,4 +1,4 @@
-.PHONY: install install-rag dev up down logs lint format test test-unit check-parser check-chunker ingest
+.PHONY: install install-rag dev up down logs lint format test test-unit check-parser check-chunker ingest smoke-search
 
 UV ?= uv
 # 依赖由 make install 同步；运行时不再 sync，避免把 rag extra 卸掉
@@ -43,3 +43,6 @@ check-chunker:
 
 ingest:
 	$(RUN) python scripts/ingest.py
+
+smoke-search:
+	$(RUN) python scripts/smoke_search.py

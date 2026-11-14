@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/langchain_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer）、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。检索、生成、评估与前端尚未实现。
+**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/langchain_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense）、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense retrieval 与 `/api/v1/search` 已实现；LLM 生成、评估与前端尚未实现。
 
 FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库；当前 C 工作区是**文件快照，不含 `.git`**，实现增量索引前需按 README 重建 sparse checkout）：
 
@@ -66,6 +66,7 @@ npm run lint
 # 索引（ingest 已实现；其余增量 / 评估脚本尚未实现）
 uv run --no-sync python scripts/ingest.py
 uv run --no-sync python scripts/ingest.py --dry-run   # 只看解析/切分/版本字段
+uv run --no-sync python scripts/smoke_search.py       # 5 条固定问题的检索 smoke
 uv run --no-sync python scripts/update_index.py     # 定时增量更新（项目签名）
 uv run --no-sync python scripts/diff_report.py      # 变更 / 陈旧度报告
 uv run --no-sync python scripts/rebuild_index.py
