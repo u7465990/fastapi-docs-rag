@@ -15,6 +15,8 @@ from qdrant_client import QdrantClient
 
 from langchain_rag import __version__
 from langchain_rag.config import Settings, get_settings
+from langchain_rag.generation.chat import REFUSAL, generate_answer
+from langchain_rag.generation.llm import ChatClient, make_chat_client
 from langchain_rag.indexing.embedder import make_embedder
 from langchain_rag.retrieval.dense import DenseRetriever, SearchHit
 
@@ -112,6 +114,34 @@ class SearchResponse(BaseModel):
     results: list[SearchResult]
 
 
+class ChatRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+    limit: int = Field(default=6, ge=1, le=10)
+    doc_type: str | None = None
+    docs_version: str | None = None
+    include_deprecated: bool = True
+    include_meta: bool = False
+
+
+class ChatSource(BaseModel):
+    index: int
+    title: str
+    url: str
+    section_path: list[str]
+    anchor: str | None
+    docs_version: str
+    is_deprecated: bool
+    deprecation_hint: bool
+    snippet: str
+
+
+class ChatResponse(BaseModel):
+    query: str
+    answer: str
+    model: str
+    sources: list[ChatSource]
+
+
 @lru_cache(maxsize=1)
 def _get_retriever() -> DenseRetriever:
     settings = get_settings()
@@ -122,6 +152,11 @@ def _get_retriever() -> DenseRetriever:
         embedder,
         collection=settings.qdrant_collection,
     )
+
+
+@lru_cache(maxsize=1)
+def _get_chat_client() -> ChatClient:
+    return make_chat_client(get_settings())
 
 
 @app.post("/api/v1/search", response_model=SearchResponse)
@@ -151,6 +186,66 @@ def search(request: SearchRequest) -> SearchResponse:
         results=[
             SearchResult.model_validate(hit, from_attributes=True) for hit in hits
         ],
+    )
+
+
+@app.post("/api/v1/chat", response_model=ChatResponse)
+def chat(request: ChatRequest) -> ChatResponse:
+    """Retrieve context, generate a grounded answer, and return cited sources."""
+    try:
+        retriever = _get_retriever()
+        hits: list[SearchHit] = retriever.search(
+            request.query,
+            limit=request.limit,
+            doc_type=request.doc_type,
+            docs_version=request.docs_version,
+            include_deprecated=request.include_deprecated,
+            include_meta=request.include_meta,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - dependency failures become 503
+        raise HTTPException(
+            status_code=503,
+            detail="retrieval service unavailable",
+        ) from exc
+
+    if not hits:
+        return ChatResponse(
+            query=request.query,
+            answer=REFUSAL,
+            model=get_settings().llm_model,
+            sources=[],
+        )
+
+    try:
+        client = _get_chat_client()
+        answer = generate_answer(request.query, hits, client)
+    except Exception as exc:  # noqa: BLE001 - provider failures become 503
+        raise HTTPException(
+            status_code=503,
+            detail="generation service unavailable",
+        ) from exc
+
+    sources = [
+        ChatSource(
+            index=index,
+            title=hit.title,
+            url=hit.url,
+            section_path=hit.section_path,
+            anchor=hit.anchor,
+            docs_version=hit.docs_version,
+            is_deprecated=hit.is_deprecated,
+            deprecation_hint=hit.deprecation_hint,
+            snippet=(hit.parent_text or hit.text)[:600],
+        )
+        for index, hit in enumerate(hits, start=1)
+    ]
+    return ChatResponse(
+        query=request.query,
+        answer=answer,
+        model=client.model,
+        sources=sources,
     )
 
 

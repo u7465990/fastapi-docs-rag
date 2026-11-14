@@ -31,7 +31,7 @@ BLOCKQUOTE_PREFIX_RE = re.compile(r"^(?:>\s?)+")
 # Titles like "Deprecate a path operation" document a feature; they do not
 # describe an API that is deprecated.
 INSTRUCTIONAL_DEPRECATION_RE = re.compile(
-    r"^\s*(?:documentation\s+)?deprecat(?:e|ing)\b",
+    r"^\s*(?:documentation\s+)?deprecat(?:e|ing|ions?)\b",
     re.IGNORECASE,
 )
 DEPRECATED_TITLE_RE = re.compile(r"^\s*deprecated\b", re.IGNORECASE)
@@ -101,9 +101,14 @@ class Section:
 
     @property
     def is_deprecated(self) -> bool:
-        """Strong signal: the section itself documents a deprecated API."""
-        return _heading_is_deprecated(self.heading.title) or bool(
-            self.deprecated_admonitions
+        """Strong signal: this section or an ancestor documents a deprecated API."""
+        # path[0] is the page H1; a page such as "Deprecations" is a topic,
+        # not an API that is itself deprecated.
+        ancestors = self.path[1:-1] if len(self.path) > 2 else []
+        return (
+            _heading_is_deprecated(self.heading.title)
+            or any(_heading_is_deprecated(title) for title in ancestors)
+            or bool(self.deprecated_admonitions)
         )
 
     @property

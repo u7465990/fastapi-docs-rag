@@ -196,6 +196,10 @@ def test_deprecation_signals(tmp_path: Path) -> None:
             "",
             "Use `lifespan`.",
             "",
+            "### Old child",
+            "",
+            "Old child body.",
+            "",
             "## Old events",
             "",
             "/// warning | Deprecated `on_event`",
@@ -261,8 +265,9 @@ def test_deprecation_signals(tmp_path: Path) -> None:
     assert sections["Deprecate a path operation"].is_deprecated is False
     assert sections["Deprecate a path operation"].deprecation_hint is True
 
-    # Real section-level deprecations stay strong.
+    # Real section-level deprecations stay strong, including child sections.
     assert sections["Alternative Events (deprecated)"].is_deprecated is True
+    assert sections["Old child"].is_deprecated is True
     assert sections["Old events"].is_deprecated is True
     assert sections["Old events"].deprecation_hint is False
     assert sections["WSGI note"].is_deprecated is True

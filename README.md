@@ -4,7 +4,7 @@
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer 与 dense retrieval（`/api/v1/search`）已可用；下一步是 LLM 生成与前端。
+> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense retrieval（`/api/v1/search`）和 RAG 问答（`/api/v1/chat`）已可用；下一步是前端聊天页。
 
 ## 数据源
 
