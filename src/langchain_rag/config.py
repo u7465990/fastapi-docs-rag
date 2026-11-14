@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     embedding_api_key: str = ""
     embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     embedding_dim: int = 1024
-    embedding_batch_size: int = 32
+    embedding_batch_size: int = 10
 
     # Reranker
     reranker_provider: str = "local"

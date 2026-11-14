@@ -145,10 +145,14 @@ def make_embedder(settings: Settings) -> Embedder:
         raise ValueError(
             "EMBEDDING_API_KEY is required; copy .env.example to .env and fill it in"
         )
+    batch_size = settings.embedding_batch_size
+    # DashScope text-embedding-v4 rejects batches larger than 10.
+    if "dashscope.aliyuncs.com" in settings.embedding_base_url and batch_size > 10:
+        batch_size = 10
     return OpenAICompatibleEmbedder(
         api_key=settings.embedding_api_key,
         base_url=settings.embedding_base_url,
         model=settings.embedding_model,
         dimension=settings.embedding_dim,
-        batch_size=settings.embedding_batch_size,
+        batch_size=batch_size,
     )

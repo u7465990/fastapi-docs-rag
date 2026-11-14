@@ -100,3 +100,16 @@ def test_factory_builds_configured_client() -> None:
     assert embedder.dimension == 8
     assert embedder.batch_size == 7
     embedder.close()
+
+
+def test_dashscope_batch_size_is_capped() -> None:
+    settings = Settings(
+        _env_file=None,
+        embedding_api_key="key",
+        embedding_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        embedding_batch_size=32,
+    )
+    embedder = make_embedder(settings)
+
+    assert embedder.batch_size == 10
+    embedder.close()
