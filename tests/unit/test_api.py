@@ -26,6 +26,11 @@ class FakeChatClient:
         assert messages
         return "答案 [1]"
 
+    def stream(self, messages):
+        assert messages
+        yield "答案"
+        yield " [1]"
+
 
 class FakeQuota:
     def __init__(self, error: Exception | None = None) -> None:
@@ -115,6 +120,27 @@ def test_chat_endpoint_returns_answer_and_sources(monkeypatch) -> None:
     assert len(body["sources"]) == 1
     assert body["sources"][0]["index"] == 1
     assert body["sources"][0]["url"].endswith("/tutorial/dependencies/")
+
+
+def test_chat_stream_endpoint_emits_sse_events(monkeypatch) -> None:
+    monkeypatch.setattr(api, "_get_retriever", lambda: FakeRetriever())
+    monkeypatch.setattr(api, "_get_chat_client", lambda: FakeChatClient())
+    monkeypatch.setattr(api, "_get_quota_guard", lambda: FakeQuota())
+
+    with client.stream(
+        "POST",
+        "/api/v1/chat/stream",
+        json={"query": "Depends 怎么用？", "limit": 3},
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "event: sources" in body
+    assert "event: token" in body
+    assert "event: usage" in body
+    assert "event: done" in body
+    assert "答案" in body
+    assert "/tutorial/dependencies/" in body
 
 
 def test_chat_endpoint_returns_429_when_quota_exceeded(monkeypatch) -> None:

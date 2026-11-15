@@ -21,13 +21,6 @@ type Source = {
   snippet: string;
 };
 
-type ChatResponse = {
-  query: string;
-  answer: string;
-  model: string;
-  sources: Source[];
-};
-
 const EXAMPLES = [
   "FastAPI 里 on_event 怎么迁移到 lifespan？",
   "Depends 和 Annotated 怎么一起用？",
@@ -59,7 +52,7 @@ export default function App() {
       if (API_TOKEN) {
         headers.Authorization = `Bearer ${API_TOKEN}`;
       }
-      const response = await fetch(`${API_BASE}/api/v1/chat`, {
+      const response = await fetch(`${API_BASE}/api/v1/chat/stream`, {
         method: "POST",
         headers,
         body: JSON.stringify({ query: text, limit: 6 }),
@@ -68,10 +61,43 @@ export default function App() {
         const body = await response.text();
         throw new Error(`HTTP ${response.status}: ${body.slice(0, 300)}`);
       }
-      const data = (await response.json()) as ChatResponse;
-      setAnswer(data.answer);
-      setSources(data.sources);
-      setModel(data.model);
+      if (!response.body) {
+        throw new Error("streaming response has no body");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        buffer = buffer.replace(/\r\n/g, "\n");
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary >= 0) {
+          const block = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          let event = "message";
+          let data = "";
+          for (const line of block.split("\n")) {
+            if (line.startsWith("event:")) event = line.slice(6).trim();
+            if (line.startsWith("data:")) data += line.slice(5).trim();
+          }
+          if (data) {
+            const payload = JSON.parse(data) as Record<string, unknown>;
+            if (event === "sources") {
+              setSources((payload.sources as Source[]) ?? []);
+            } else if (event === "token") {
+              setAnswer((previous) => previous + String(payload.text ?? ""));
+            } else if (event === "done") {
+              setModel(String(payload.model ?? ""));
+            } else if (event === "error") {
+              throw new Error(String(payload.message ?? "generation stream failed"));
+            }
+          }
+          boundary = buffer.indexOf("\n\n");
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Protocol
 
 import httpx
@@ -20,6 +21,9 @@ class ChatClient(Protocol):
 
     def complete(self, messages: Sequence[dict[str, str]]) -> str:
         """Return the assistant text for *messages*."""
+
+    def stream(self, messages: Sequence[dict[str, str]]) -> Iterator[str]:
+        """Yield assistant text chunks for *messages*."""
 
 
 class OpenAICompatibleChatClient:
@@ -103,6 +107,49 @@ class OpenAICompatibleChatClient:
             return content.strip()
 
         raise LLMError("chat request exhausted retries")
+
+    def stream(self, messages: Sequence[dict[str, str]]) -> Iterator[str]:
+        payload = {
+            "model": self.model,
+            "messages": list(messages),
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "stream": True,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            with self._client.stream(
+                "POST",
+                self.url,
+                headers=headers,
+                json=payload,
+                timeout=self.timeout,
+            ) as response:
+                if response.status_code >= 400:
+                    response.read()
+                    detail = response.text[:300].replace("\n", " ")
+                    raise LLMError(
+                        f"chat stream failed with HTTP {response.status_code}: {detail}"
+                    )
+                for line in response.iter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        event = json.loads(data)
+                        delta = event["choices"][0].get("delta", {})
+                    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                        continue
+                    content = delta.get("content")
+                    if isinstance(content, str) and content:
+                        yield content
+        except httpx.HTTPError as exc:
+            raise LLMError(f"chat stream failed: {exc}") from exc
 
 
 def make_chat_client(settings: Settings) -> ChatClient:

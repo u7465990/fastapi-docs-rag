@@ -4,7 +4,7 @@
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、Docker API 和 Nginx 静态托管的聊天页已可用；下一步是评估与多端壳。
+> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估和 HTTP 限流/额度锁；下一步是多轮会话与生成质量评估。
 
 ## 数据源
 
@@ -107,6 +107,22 @@ VITE_API_TOKEN=同一个token
 注意：前端 bundle 里的 token 用户可见，只是演示门禁，不是真正的用户登录。真正上线需要账号体系。
 
 Nginx 会设置 `X-Real-IP`，限流按这个 IP 计数；直接暴露 API 时该 header 可被伪造，所以生产必须只让 API 通过 Nginx 访问。
+
+### 流式回答
+
+`POST /api/v1/chat/stream` 返回 `text/event-stream`，顺序固定为：
+
+```text
+sources -> token* -> usage -> done
+```
+
+- `sources` 先到，前端可以先显示来源
+- `token` 是增量文本
+- `usage` 当前为 `null` 计数（OpenAI 兼容流不一定返回 usage）
+- `done` 表示结束
+- 生成异常会发 `error`，不会静默截断
+
+前端用 `fetch` + `ReadableStream` 解析，不能用原生 `EventSource`（它只支持 GET）。Nginx 的 `/api` 已关闭 `proxy_buffering`，否则流会被整段缓冲。
 
 常用命令：
 

@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from collections.abc import Iterator
 from functools import lru_cache
 from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
 
@@ -168,6 +170,27 @@ class ChatResponse(BaseModel):
     sources: list[ChatSource]
 
 
+def _sse(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _sources_for_hits(hits: list[SearchHit]) -> list[ChatSource]:
+    return [
+        ChatSource(
+            index=index,
+            title=hit.title,
+            url=hit.url,
+            section_path=hit.section_path,
+            anchor=hit.anchor,
+            docs_version=hit.docs_version,
+            is_deprecated=hit.is_deprecated,
+            deprecation_hint=hit.deprecation_hint,
+            snippet=(hit.parent_text or hit.text)[:600],
+        )
+        for index, hit in enumerate(hits, start=1)
+    ]
+
+
 @lru_cache(maxsize=1)
 def _get_retriever() -> DenseRetriever:
     settings = get_settings()
@@ -322,25 +345,100 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
             detail="generation service unavailable",
         ) from exc
 
-    sources = [
-        ChatSource(
-            index=index,
-            title=hit.title,
-            url=hit.url,
-            section_path=hit.section_path,
-            anchor=hit.anchor,
-            docs_version=hit.docs_version,
-            is_deprecated=hit.is_deprecated,
-            deprecation_hint=hit.deprecation_hint,
-            snippet=(hit.parent_text or hit.text)[:600],
-        )
-        for index, hit in enumerate(hits, start=1)
-    ]
     return ChatResponse(
         query=payload.query,
         answer=answer,
         model=client.model,
-        sources=sources,
+        sources=_sources_for_hits(hits),
+    )
+
+
+@app.post("/api/v1/chat/stream")
+def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingResponse:
+    """SSE version of /api/v1/chat: sources first, then token chunks."""
+    _guard_http(http_request, "chat")
+    _reserve_embedding(payload.query)
+    try:
+        retriever = _get_retriever()
+        hits: list[SearchHit] = retriever.search(
+            payload.query,
+            limit=payload.limit,
+            doc_type=payload.doc_type,
+            docs_version=payload.docs_version,
+            include_deprecated=payload.include_deprecated,
+            include_meta=payload.include_meta,
+            include_reference=payload.include_reference,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - dependency failures become 503
+        raise HTTPException(
+            status_code=503,
+            detail="retrieval service unavailable",
+        ) from exc
+
+    settings = get_settings()
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    }
+    if not hits:
+        def refusal_stream() -> Iterator[str]:
+            yield _sse("sources", {"sources": []})
+            yield _sse("token", {"text": REFUSAL})
+            yield _sse("usage", {"input_tokens": None, "output_tokens": None})
+            yield _sse("done", {"model": settings.llm_model})
+
+        return StreamingResponse(
+            refusal_stream(),
+            media_type="text/event-stream",
+            headers=headers,
+        )
+
+    messages = build_messages(payload.query, hits)
+    max_output = min(settings.llm_max_tokens, settings.llm_max_tokens_cap)
+    try:
+        _get_quota_guard().reserve(
+            estimate_chat_tokens(messages, max_output)
+        )
+    except QuotaExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except QuotaUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="quota service unavailable",
+        ) from exc
+
+    try:
+        client = _get_chat_client()
+    except Exception as exc:  # noqa: BLE001 - provider failures become 503
+        raise HTTPException(
+            status_code=503,
+            detail="generation service unavailable",
+        ) from exc
+
+    sources = _sources_for_hits(hits)
+
+    def token_stream() -> Iterator[str]:
+        yield _sse(
+            "sources",
+            {"sources": [source.model_dump() for source in sources]},
+        )
+        try:
+            for chunk in client.stream(messages):
+                yield _sse("token", {"text": chunk})
+        except Exception:  # noqa: BLE001 - errors must be explicit in SSE
+            yield _sse("error", {"message": "generation stream failed"})
+            return
+        # The OpenAI-compatible stream does not expose usage in all providers;
+        # keep the event for the fixed SSE contract, with null counts.
+        yield _sse("usage", {"input_tokens": None, "output_tokens": None})
+        yield _sse("done", {"model": client.model})
+
+    return StreamingResponse(
+        token_stream(),
+        media_type="text/event-stream",
+        headers=headers,
     )
 
 
