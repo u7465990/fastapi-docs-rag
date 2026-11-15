@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/langchain_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense retrieval、`/api/v1/search`、`/api/v1/chat`、前端聊天页、Docker API 与 Nginx 静态托管已实现；SSE、多轮、评估与并发调优尚未实现。
+**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/langchain_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense retrieval、`/api/v1/search`、`/api/v1/chat`、前端聊天页、Docker API、Nginx 静态托管、30 条 golden set 检索评估已实现；SSE、多轮、生成质量评估与并发调优尚未实现。
 
 FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库；当前 C 工作区是**文件快照，不含 `.git`**，实现增量索引前需按 README 重建 sparse checkout）：
 
@@ -64,7 +64,7 @@ npm run dev     # Vite dev server: http://localhost:5173
 npm run build   # 生产静态文件
 npm run lint
 
-# 索引（ingest 已实现；其余增量 / 评估脚本尚未实现）
+# 索引与评估（ingest / evaluate 已实现；增量 / 变更报告脚本尚未实现）
 uv run --no-sync python scripts/check_providers.py   # 验证 embedding / chat Key
 uv run --no-sync python scripts/ingest.py
 uv run --no-sync python scripts/ingest.py --dry-run   # 只看解析/切分/版本字段

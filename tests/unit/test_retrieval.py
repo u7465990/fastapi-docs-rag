@@ -8,7 +8,7 @@ from langchain_rag.indexing.chunker import chunk_document
 from langchain_rag.indexing.indexer import QdrantIndexer
 from langchain_rag.ingestion.parser import parse_markdown
 from langchain_rag.ingestion.source import SourceInfo
-from langchain_rag.retrieval.dense import DenseRetriever
+from langchain_rag.retrieval.dense import DenseRetriever, build_filter
 
 
 class ConstantEmbedder:
@@ -93,6 +93,25 @@ def test_search_filters_deprecated_and_doc_type(tmp_path: Path) -> None:
     assert clean_hits
     assert all(not hit.is_deprecated for hit in clean_hits)
     assert meta_hits == []
+
+
+def test_reference_pages_are_excluded_by_default() -> None:
+    default_filter = build_filter()
+    with_reference = build_filter(include_reference=True)
+
+    assert default_filter is not None
+    assert default_filter.must_not is not None
+    assert any(
+        condition.match.value == "reference"
+        for condition in default_filter.must_not
+        if hasattr(condition, "match")
+    )
+    assert with_reference is not None
+    assert not any(
+        condition.match.value == "reference"
+        for condition in (with_reference.must_not or [])
+        if hasattr(condition, "match")
+    )
 
 
 def test_empty_query_is_rejected(tmp_path: Path) -> None:

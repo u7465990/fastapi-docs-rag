@@ -94,6 +94,7 @@ uv run --no-sync mypy src
 uv run --no-sync python scripts/check_parser.py   # 解析器冒烟统计
 uv run --no-sync python scripts/check_chunker.py  # 切分统计（token 分布 / 代码块 / 废弃）
 uv run --no-sync python scripts/load_search.py    # 8 路并发检索延迟
+uv run --no-sync python scripts/evaluate.py       # 30 条 golden set 的检索基线
 ```
 
 `make install` / `make test` / `make lint` 是上面的薄封装。
@@ -110,6 +111,8 @@ uv run --no-sync python scripts/load_search.py    # 8 路并发检索延迟
 - [RAG 原理](docs/RAG_PRINCIPLES.md)：各环节的底层机制、公式、失败模式与实现风险
 - [2026-11-14 工作记录](docs/WORKLOG_2026-11-14.md)：当天的命令、假设、验证结果与决策
 - [名词与原理注解](docs/WORKLOG_2026-11-14_EXPLAINED.md)：工作记录中术语、行为、历史改动与设计原理的解释
+- [检索评估基线](docs/EVALUATION.md)：30 条 golden set、指标、迭代记录与局限
+- [Bad Cases](docs/BAD_CASES.md)：已实测的排序/标注问题与修复记录
 
 ## 计划技术栈
 

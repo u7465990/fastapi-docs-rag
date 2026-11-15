@@ -37,6 +37,7 @@ def build_filter(
     docs_version: str | None = None,
     include_deprecated: bool = True,
     include_meta: bool = False,
+    include_reference: bool = False,
 ) -> Filter | None:
     """Build the payload filter used by dense retrieval."""
     must: list[Any] = []
@@ -44,10 +45,15 @@ def build_filter(
 
     if doc_type:
         must.append(FieldCondition(key="doc_type", match=MatchValue(value=doc_type)))
-    elif not include_meta:
-        must_not.append(
-            FieldCondition(key="doc_type", match=MatchValue(value="meta"))
-        )
+    else:
+        if not include_meta:
+            must_not.append(
+                FieldCondition(key="doc_type", match=MatchValue(value="meta"))
+            )
+        if not include_reference:
+            must_not.append(
+                FieldCondition(key="doc_type", match=MatchValue(value="reference"))
+            )
     if docs_version:
         must.append(
             FieldCondition(key="docs_version", match=MatchValue(value=docs_version))
@@ -82,6 +88,7 @@ class DenseRetriever:
         docs_version: str | None = None,
         include_deprecated: bool = True,
         include_meta: bool = False,
+        include_reference: bool = False,
     ) -> list[SearchHit]:
         if not query.strip():
             raise ValueError("query must not be empty")
@@ -98,6 +105,7 @@ class DenseRetriever:
                 docs_version=docs_version,
                 include_deprecated=include_deprecated,
                 include_meta=include_meta,
+                include_reference=include_reference,
             ),
             limit=limit,
             with_payload=True,

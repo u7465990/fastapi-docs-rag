@@ -104,6 +104,7 @@ class SearchRequest(BaseModel):
     docs_version: str | None = None
     include_deprecated: bool = True
     include_meta: bool = False
+    include_reference: bool = False
 
 
 class SearchResult(BaseModel):
@@ -137,6 +138,7 @@ class ChatRequest(BaseModel):
     docs_version: str | None = None
     include_deprecated: bool = True
     include_meta: bool = False
+    include_reference: bool = False
 
 
 class ChatSource(BaseModel):
@@ -192,6 +194,7 @@ def search(request: SearchRequest) -> SearchResponse:
             docs_version=request.docs_version,
             include_deprecated=request.include_deprecated,
             include_meta=request.include_meta,
+            include_reference=request.include_reference,
         )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -222,6 +225,7 @@ def chat(request: ChatRequest) -> ChatResponse:
             docs_version=request.docs_version,
             include_deprecated=request.include_deprecated,
             include_meta=request.include_meta,
+            include_reference=request.include_reference,
         )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

@@ -1,0 +1,30 @@
+{"id": "t01", "question": "FastAPI 的第一个应用怎么创建并运行？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/first-steps/"], "category": "tutorial", "language": "zh"}
+{"id": "t02", "question": "路径参数怎么声明类型和默认值？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/path-params/"], "category": "tutorial", "language": "zh"}
+{"id": "t03", "question": "查询参数怎么设置默认值、可选参数和必填参数？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/query-params/"], "category": "tutorial", "language": "zh"}
+{"id": "t04", "question": "怎么用 Pydantic 模型定义请求体？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/body/"], "category": "tutorial", "language": "zh"}
+{"id": "t05", "question": "怎么用 response_model 过滤响应字段？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/response-model/"], "category": "tutorial", "language": "zh"}
+{"id": "t06", "question": "Depends 怎么实现依赖注入？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/dependencies/"], "category": "tutorial", "language": "zh"}
+{"id": "t07", "question": "依赖里用 yield 怎么管理数据库连接和资源清理？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-with-yield/"], "category": "tutorial", "language": "zh"}
+{"id": "t08", "question": "BackgroundTasks 怎么在响应返回后执行任务？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/background-tasks/"], "category": "tutorial", "language": "zh"}
+{"id": "t09", "question": "怎么用 APIRouter 把大型应用拆成多个文件？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/bigger-applications/"], "category": "tutorial", "language": "zh"}
+{"id": "t10", "question": "怎么用 SQLModel 连接数据库并定义模型？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/sql-databases/"], "category": "tutorial", "language": "zh"}
+{"id": "t11", "question": "怎么用 TestClient 给 FastAPI 写测试？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/testing/"], "category": "tutorial", "language": "zh"}
+{"id": "t12", "question": "怎么抛出 HTTPException 并自定义错误响应？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/handling-errors/"], "category": "tutorial", "language": "zh"}
+{"id": "t13", "question": "怎么用 Query 给查询参数加长度和正则校验？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/query-params-str-validations/"], "category": "tutorial", "language": "zh"}
+{"id": "t14", "question": "怎么上传文件并接收 multipart 表单？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/request-files/"], "category": "tutorial", "language": "zh"}
+{"id": "a01", "question": "FastAPI 里 on_event 怎么迁移到 lifespan？", "expected_urls": ["https://fastapi.tiangolo.com/advanced/events/"], "category": "advanced", "language": "zh"}
+{"id": "a02", "question": "怎么给 FastAPI 写自定义中间件？", "expected_urls": ["https://fastapi.tiangolo.com/advanced/middleware/"], "category": "advanced", "language": "zh"}
+{"id": "a03", "question": "FastAPI 的 WebSocket 怎么收发消息？", "expected_urls": ["https://fastapi.tiangolo.com/advanced/websockets/"], "category": "advanced", "language": "zh"}
+{"id": "a04", "question": "怎么返回自定义的 Response 或 StreamingResponse？", "expected_urls": ["https://fastapi.tiangolo.com/advanced/custom-response/"], "category": "advanced", "language": "zh"}
+{"id": "h01", "question": "怎么自定义 Swagger UI 的标题和参数？", "expected_urls": ["https://fastapi.tiangolo.com/how-to/configure-swagger-ui/"], "category": "how-to", "language": "zh"}
+{"id": "h02", "question": "Pydantic v1 的 validator 在 v2 应该怎么写？", "expected_urls": ["https://fastapi.tiangolo.com/how-to/migrate-from-pydantic-v1-to-pydantic-v2/"], "category": "how-to", "language": "zh"}
+{"id": "d01", "question": "怎么用 Docker 部署 FastAPI 应用？", "expected_urls": ["https://fastapi.tiangolo.com/deployment/docker/"], "category": "deployment", "language": "zh"}
+{"id": "d02", "question": "FastAPI 怎么配置 HTTPS 和 TLS 证书？", "expected_urls": ["https://fastapi.tiangolo.com/deployment/https/"], "category": "deployment", "language": "zh"}
+{"id": "d03", "question": "生产环境 uvicorn 的 workers 应该怎么配置？", "expected_urls": ["https://fastapi.tiangolo.com/deployment/server-workers/"], "category": "deployment", "language": "zh"}
+{"id": "s01", "question": "OAuth2 密码流加 JWT 怎么在 FastAPI 里实现？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/"], "category": "security", "language": "zh"}
+{"id": "s02", "question": "怎么配置 CORS 允许前端跨域访问？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/cors/"], "category": "security", "language": "zh"}
+{"id": "v01", "question": "FastAPI 0.162.0 对布尔表单字段做了什么变更？", "expected_urls": ["https://fastapi.tiangolo.com/release-notes/"], "category": "version", "language": "zh"}
+{"id": "m01", "question": "FastAPI 的依赖注入和中间件分别在什么场景下使用？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/dependencies/", "https://fastapi.tiangolo.com/tutorial/middleware/", "https://fastapi.tiangolo.com/advanced/middleware/"], "category": "multi-hop", "language": "zh"}
+{"id": "m02", "question": "OAuth2PasswordBearer 怎么配合 JWT 做登录认证？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/security/first-steps/", "https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/"], "category": "multi-hop", "language": "zh"}
+{"id": "m03", "question": "怎么让接口返回 204 状态码并且不返回响应体？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/response-status-code/", "https://fastapi.tiangolo.com/advanced/response-change-status-code/"], "category": "tutorial", "language": "zh"}
+{"id": "m04", "question": "生产部署时 Docker、HTTPS 和 uvicorn workers 应该怎么组合？", "expected_urls": ["https://fastapi.tiangolo.com/deployment/docker/", "https://fastapi.tiangolo.com/deployment/https/", "https://fastapi.tiangolo.com/deployment/server-workers/"], "category": "multi-hop", "language": "zh"}
