@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     embedding_dim: int = 1024
     embedding_batch_size: int = 10
+    embedding_daily_request_limit: int = 500
+    embedding_daily_token_budget: int = 200_000
 
     # Reranker
     reranker_provider: str = "local"
@@ -95,6 +97,7 @@ class Settings(BaseSettings):
 
     # API
     admin_api_key: str = ""
+    api_access_token: str = ""
     rate_limit_per_minute: int = 30
 
     def missing_required(self) -> list[str]:

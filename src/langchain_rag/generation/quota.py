@@ -62,6 +62,7 @@ class DailyQuota:
         *,
         request_limit: int,
         token_budget: int,
+        namespace: str = "llm",
         ttl_seconds: int = QUOTA_TTL_SECONDS,
     ) -> None:
         if request_limit <= 0:
@@ -71,14 +72,15 @@ class DailyQuota:
         self.client = client
         self.request_limit = request_limit
         self.token_budget = token_budget
+        self.namespace = namespace
         self.ttl_seconds = ttl_seconds
 
     def reserve(self, estimated_tokens: int) -> QuotaState:
         """Atomically reserve one request and its estimated token cost."""
         estimate = max(1, estimated_tokens)
         day = datetime.now(UTC).strftime("%Y%m%d")
-        request_key = f"quota:llm:requests:{day}"
-        token_key = f"quota:llm:tokens:{day}"
+        request_key = f"quota:{self.namespace}:requests:{day}"
+        token_key = f"quota:{self.namespace}:tokens:{day}"
         try:
             result: Any = self.client.eval(
                 _RESERVE_LUA,
@@ -107,10 +109,17 @@ class DailyQuota:
         return QuotaState(requests=requests, tokens=tokens)
 
 
-def make_daily_quota(settings: Settings) -> DailyQuota:
+def make_daily_quota(
+    settings: Settings,
+    *,
+    namespace: str = "llm",
+    request_limit: int | None = None,
+    token_budget: int | None = None,
+) -> DailyQuota:
     client = Redis.from_url(settings.redis_url, decode_responses=True)
     return DailyQuota(
         client,
-        request_limit=settings.llm_daily_request_limit,
-        token_budget=settings.llm_daily_token_budget,
+        request_limit=request_limit or settings.llm_daily_request_limit,
+        token_budget=token_budget or settings.llm_daily_token_budget,
+        namespace=namespace,
     )

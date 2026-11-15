@@ -7,7 +7,7 @@ from functools import lru_cache
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -29,6 +29,14 @@ from langchain_rag.generation.quota import (
 )
 from langchain_rag.indexing.embedder import make_embedder
 from langchain_rag.retrieval.dense import DenseRetriever, SearchHit
+from langchain_rag.security import (
+    RateLimiter,
+    RateLimitExceeded,
+    RateLimitUnavailable,
+    check_access_token,
+    client_identifier,
+    make_rate_limiter,
+)
 
 _settings = get_settings()
 
@@ -182,19 +190,64 @@ def _get_quota_guard() -> DailyQuota:
     return make_daily_quota(get_settings())
 
 
+@lru_cache(maxsize=1)
+def _get_embedding_quota() -> DailyQuota:
+    settings = get_settings()
+    return make_daily_quota(
+        settings,
+        namespace="embedding",
+        request_limit=settings.embedding_daily_request_limit,
+        token_budget=settings.embedding_daily_token_budget,
+    )
+
+
+@lru_cache(maxsize=1)
+def _get_rate_limiter() -> RateLimiter:
+    return make_rate_limiter(get_settings())
+
+
+def _guard_http(http_request: Request, scope: str) -> None:
+    settings = get_settings()
+    check_access_token(http_request, settings.api_access_token)
+    try:
+        _get_rate_limiter().check(scope, client_identifier(http_request))
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except RateLimitUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="rate limiter unavailable",
+        ) from exc
+
+
+def _reserve_embedding(query: str) -> None:
+    estimated = max(1, len(query) // 3 + 16)
+    try:
+        _get_embedding_quota().reserve(estimated)
+    except QuotaExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except QuotaUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="embedding quota unavailable",
+        ) from exc
+
+
 @app.post("/api/v1/search", response_model=SearchResponse)
-def search(request: SearchRequest) -> SearchResponse:
+def search(http_request: Request, payload: SearchRequest) -> SearchResponse:
     """Dense retrieval over the current index; no generation."""
+    _guard_http(http_request, "search")
+    _reserve_embedding(payload.query)
     try:
         retriever = _get_retriever()
         hits: list[SearchHit] = retriever.search(
-            request.query,
-            limit=request.limit,
-            doc_type=request.doc_type,
-            docs_version=request.docs_version,
-            include_deprecated=request.include_deprecated,
-            include_meta=request.include_meta,
-            include_reference=request.include_reference,
+            payload.query,
+            limit=payload.limit,
+            doc_type=payload.doc_type,
+            docs_version=payload.docs_version,
+            include_deprecated=payload.include_deprecated,
+            include_meta=payload.include_meta,
+            include_reference=payload.include_reference,
         )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -205,7 +258,7 @@ def search(request: SearchRequest) -> SearchResponse:
         ) from exc
 
     return SearchResponse(
-        query=request.query,
+        query=payload.query,
         count=len(hits),
         results=[
             SearchResult.model_validate(hit, from_attributes=True) for hit in hits
@@ -214,18 +267,20 @@ def search(request: SearchRequest) -> SearchResponse:
 
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
-def chat(request: ChatRequest) -> ChatResponse:
+def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
     """Retrieve context, generate a grounded answer, and return cited sources."""
+    _guard_http(http_request, "chat")
+    _reserve_embedding(payload.query)
     try:
         retriever = _get_retriever()
         hits: list[SearchHit] = retriever.search(
-            request.query,
-            limit=request.limit,
-            doc_type=request.doc_type,
-            docs_version=request.docs_version,
-            include_deprecated=request.include_deprecated,
-            include_meta=request.include_meta,
-            include_reference=request.include_reference,
+            payload.query,
+            limit=payload.limit,
+            doc_type=payload.doc_type,
+            docs_version=payload.docs_version,
+            include_deprecated=payload.include_deprecated,
+            include_meta=payload.include_meta,
+            include_reference=payload.include_reference,
         )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -238,13 +293,13 @@ def chat(request: ChatRequest) -> ChatResponse:
     settings = get_settings()
     if not hits:
         return ChatResponse(
-            query=request.query,
+            query=payload.query,
             answer=REFUSAL,
             model=settings.llm_model,
             sources=[],
         )
 
-    messages = build_messages(request.query, hits)
+    messages = build_messages(payload.query, hits)
     max_output = min(settings.llm_max_tokens, settings.llm_max_tokens_cap)
     try:
         _get_quota_guard().reserve(
@@ -282,7 +337,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         for index, hit in enumerate(hits, start=1)
     ]
     return ChatResponse(
-        query=request.query,
+        query=payload.query,
         answer=answer,
         model=client.model,
         sources=sources,

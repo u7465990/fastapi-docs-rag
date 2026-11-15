@@ -5,6 +5,9 @@ import remarkGfm from "remark-gfm";
 // Empty means same-origin `/api`, which works behind nginx and Vite's proxy.
 // Capacitor/mobile builds can set VITE_API_BASE_URL to the public API origin.
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+// Optional shared demo token; this is visible in the bundled JS, so it is a
+// gate for demos, not real user authentication.
+const API_TOKEN = import.meta.env.VITE_API_TOKEN ?? "";
 
 type Source = {
   index: number;
@@ -50,9 +53,15 @@ export default function App() {
     setAnswer("");
     setSources([]);
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (API_TOKEN) {
+        headers.Authorization = `Bearer ${API_TOKEN}`;
+      }
       const response = await fetch(`${API_BASE}/api/v1/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ query: text, limit: 6 }),
       });
       if (!response.ok) {

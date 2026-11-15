@@ -1,5 +1,6 @@
 """Unit tests for the API skeleton."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 import langchain_rag.api as api
@@ -9,6 +10,13 @@ from langchain_rag.generation.quota import QuotaExceeded
 from langchain_rag.retrieval.dense import SearchHit
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _disable_http_security(monkeypatch):
+    """Keep endpoint tests independent of Redis; security has its own tests."""
+    monkeypatch.setattr(api, "_guard_http", lambda *args, **kwargs: None)
+    monkeypatch.setattr(api, "_reserve_embedding", lambda query: None)
 
 
 class FakeChatClient:

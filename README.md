@@ -84,6 +84,30 @@ LLM_DAILY_TOKEN_BUDGET=300000
 
 `LLM_MAX_TOKENS_CAP` 是单次硬上限；后两项是每天请求数 / token 预算。Redis 不可用时返回 503，不会绕过额度直接调用模型。
 
+### HTTP 限流、embedding 额度和 access token
+
+```dotenv
+RATE_LIMIT_PER_MINUTE=30
+EMBEDDING_DAILY_REQUEST_LIMIT=500
+EMBEDDING_DAILY_TOKEN_BUDGET=200000
+API_ACCESS_TOKEN=
+```
+
+- `/api/v1/search` 和 `/api/v1/chat` 都按 IP 做每分钟限流；超限返回 429。
+- 每次检索/问答都会消耗一次 embedding 额度；embedding 超限同样返回 429。
+- `API_ACCESS_TOKEN` 为空时不做鉴权（本地开发默认）；设置后请求需要：
+  - `Authorization: Bearer <token>`，或
+  - `X-API-Key: <token>`
+- 前端如果要在开启 token 后使用，构建时设置 `apps/web/.env`：
+
+```dotenv
+VITE_API_TOKEN=同一个token
+```
+
+注意：前端 bundle 里的 token 用户可见，只是演示门禁，不是真正的用户登录。真正上线需要账号体系。
+
+Nginx 会设置 `X-Real-IP`，限流按这个 IP 计数；直接暴露 API 时该 header 可被伪造，所以生产必须只让 API 通过 Nginx 访问。
+
 常用命令：
 
 ```bash
