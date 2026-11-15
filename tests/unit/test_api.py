@@ -42,6 +42,34 @@ class FakeQuota:
             raise self.error
 
 
+class FakeSessionStore:
+    def __init__(self) -> None:
+        self.messages: list[dict[str, str]] = []
+        self.appended: list[tuple[str, str, str]] = []
+
+    def load(self, session_id: str) -> list[dict[str, str]]:
+        assert session_id
+        return list(self.messages)
+
+    def append_turn(self, session_id: str, question: str, answer: str) -> None:
+        self.appended.append((session_id, question, answer))
+        self.messages.extend(
+            [
+                {"role": "user", "content": question},
+                {"role": "assistant", "content": answer},
+            ]
+        )
+
+
+class CapturingChatClient(FakeChatClient):
+    def __init__(self) -> None:
+        self.calls: list[list[dict[str, str]]] = []
+
+    def complete(self, messages):
+        self.calls.append(list(messages))
+        return "答案 [1]"
+
+
 class FakeRetriever:
     def search(self, query: str, **kwargs):
         assert query
@@ -141,6 +169,35 @@ def test_chat_stream_endpoint_emits_sse_events(monkeypatch) -> None:
     assert "event: done" in body
     assert "答案" in body
     assert "/tutorial/dependencies/" in body
+
+
+def test_chat_endpoint_uses_and_updates_session_history(monkeypatch) -> None:
+    store = FakeSessionStore()
+    chat_client = CapturingChatClient()
+    monkeypatch.setattr(api, "_get_retriever", lambda: FakeRetriever())
+    monkeypatch.setattr(api, "_get_chat_client", lambda: chat_client)
+    monkeypatch.setattr(api, "_get_quota_guard", lambda: FakeQuota())
+    monkeypatch.setattr(api, "_get_session_store", lambda: store)
+
+    first = client.post(
+        "/api/v1/chat",
+        json={"query": "Depends 怎么用？", "session_id": "session-123"},
+    )
+    second = client.post(
+        "/api/v1/chat",
+        json={"query": "那 Annotated 呢？", "session_id": "session-123"},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["session_id"] == "session-123"
+    assert len(chat_client.calls) == 2
+    second_messages = chat_client.calls[1]
+    assert second_messages[0]["role"] == "system"
+    assert {"role": "user", "content": "Depends 怎么用？"} in second_messages
+    assert {"role": "assistant", "content": "答案 [1]"} in second_messages
+    assert store.appended[0][0] == "session-123"
+    assert store.appended[1][1] == "那 Annotated 呢？"
 
 
 def test_chat_endpoint_returns_429_when_quota_exceeded(monkeypatch) -> None:

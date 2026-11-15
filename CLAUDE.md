@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/langchain_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense retrieval、`/api/v1/search`、`/api/v1/chat`、`/api/v1/chat/stream` SSE、前端聊天页、Docker API、Nginx 静态托管、30 条 golden set 检索评估、HTTP 限流/access token/embedding 额度已实现；多轮、生成质量评估与并发调优尚未实现。
+**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/langchain_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense retrieval、`/api/v1/search`、`/api/v1/chat`、`/api/v1/chat/stream` SSE、多轮会话、前端聊天页、Docker API、Nginx 静态托管、30 条 golden set 检索评估、HTTP 限流/access token/embedding 额度已实现；生成质量评估与并发调优尚未实现。
 
 FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库；当前 C 工作区是**文件快照，不含 `.git`**，实现增量索引前需按 README 重建 sparse checkout）：
 
@@ -140,6 +140,7 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 - LLM 调用前必须过应用层每日额度锁：Redis 原子预占请求数/token，超限 429；Redis 不可用返回 503，不绕过。
 - `/search` 和 `/chat` 都按 IP 做每分钟限流；query embedding 也有每日额度（请求数 + token），超限 429。
 - `API_ACCESS_TOKEN` 为空时不鉴权（本地开发）；设置后接受 `Authorization: Bearer` 或 `X-API-Key`。前端 `VITE_API_TOKEN` 只是演示门禁，不是真实登录。
+- 多轮会话存 Redis `chat:session:{session_id}:messages`，最多 12 条消息、TTL 7 天；`session_id` 不是登录身份，正式上线需要真实鉴权。
 - SSE 事件顺序固定：`sources` → `token`*N → `usage` → `done`；异常必须显式发 `error` 事件。前端先展示来源，再流式显示答案。
 
 **前端**

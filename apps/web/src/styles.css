@@ -31,6 +31,34 @@ header p {
   color: #64748b;
 }
 
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.new-chat {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  border-radius: 9px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.new-chat:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.session-id {
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
 .examples {
   display: flex;
   flex-wrap: wrap;
@@ -108,6 +136,27 @@ textarea {
   color: #1d4ed8;
 }
 
+.conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.conversation .answer {
+  margin-top: 0;
+}
+
+.user-message {
+  align-self: flex-end;
+  max-width: 85%;
+  background: #dbeafe;
+  color: #1e3a8a;
+  border-radius: 14px 14px 4px 14px;
+  padding: 10px 14px;
+  white-space: pre-wrap;
+}
+
 .answer,
 .sources {
   margin-top: 24px;
@@ -115,6 +164,15 @@ textarea {
   border: 1px solid #e2e8f0;
   border-radius: 14px;
   padding: 20px;
+}
+
+.answer .sources {
+  margin-top: 18px;
+  padding: 16px 0 0;
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .answer-head {

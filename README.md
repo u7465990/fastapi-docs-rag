@@ -4,7 +4,7 @@
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估和 HTTP 限流/额度锁；下一步是多轮会话与生成质量评估。
+> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估和 HTTP 限流/额度锁；下一步是生成质量评估与部署硬化。
 
 ## 数据源
 
@@ -123,6 +123,20 @@ sources -> token* -> usage -> done
 - 生成异常会发 `error`，不会静默截断
 
 前端用 `fetch` + `ReadableStream` 解析，不能用原生 `EventSource`（它只支持 GET）。Nginx 的 `/api` 已关闭 `proxy_buffering`，否则流会被整段缓冲。
+
+### 多轮会话
+
+请求里带 `session_id` 即可启用多轮：
+
+```json
+{"query": "那它和 startup/shutdown 有什么区别？", "limit": 6, "session_id": "..."}
+```
+
+- 历史存 Redis：`chat:session:{session_id}:messages`
+- 最多保留 12 条消息（约 6 轮），TTL 7 天
+- 前端用 `localStorage` 保存 session_id，并提供“新对话”按钮
+- 不传 `session_id` 就是单轮，不读写历史
+- session_id 不是登录身份；别人拿到它就能读历史，正式上线必须配真实鉴权
 
 常用命令：
 

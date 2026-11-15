@@ -29,6 +29,11 @@ from langchain_rag.generation.quota import (
     QuotaUnavailable,
     make_daily_quota,
 )
+from langchain_rag.generation.session import (
+    SessionStore,
+    SessionUnavailable,
+    make_session_store,
+)
 from langchain_rag.indexing.embedder import make_embedder
 from langchain_rag.retrieval.dense import DenseRetriever, SearchHit
 from langchain_rag.security import (
@@ -149,6 +154,7 @@ class ChatRequest(BaseModel):
     include_deprecated: bool = True
     include_meta: bool = False
     include_reference: bool = False
+    session_id: str | None = Field(default=None, max_length=64)
 
 
 class ChatSource(BaseModel):
@@ -168,6 +174,7 @@ class ChatResponse(BaseModel):
     answer: str
     model: str
     sources: list[ChatSource]
+    session_id: str | None = None
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:
@@ -227,6 +234,36 @@ def _get_embedding_quota() -> DailyQuota:
 @lru_cache(maxsize=1)
 def _get_rate_limiter() -> RateLimiter:
     return make_rate_limiter(get_settings())
+
+
+@lru_cache(maxsize=1)
+def _get_session_store() -> SessionStore:
+    return make_session_store(get_settings())
+
+
+def _load_history(session_id: str | None) -> list[dict[str, str]]:
+    if not session_id:
+        return []
+    try:
+        return _get_session_store().load(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SessionUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="session store unavailable",
+        ) from exc
+
+
+def _save_turn(session_id: str | None, question: str, answer: str) -> None:
+    if not session_id:
+        return
+    try:
+        _get_session_store().append_turn(session_id, question, answer)
+    except (SessionUnavailable, ValueError):
+        # The answer is still useful; do not fail the response if history
+        # persistence has a transient problem.
+        pass
 
 
 def _guard_http(http_request: Request, scope: str) -> None:
@@ -294,6 +331,7 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
     """Retrieve context, generate a grounded answer, and return cited sources."""
     _guard_http(http_request, "chat")
     _reserve_embedding(payload.query)
+    history = _load_history(payload.session_id)
     try:
         retriever = _get_retriever()
         hits: list[SearchHit] = retriever.search(
@@ -315,14 +353,16 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
 
     settings = get_settings()
     if not hits:
+        _save_turn(payload.session_id, payload.query, REFUSAL)
         return ChatResponse(
             query=payload.query,
             answer=REFUSAL,
             model=settings.llm_model,
             sources=[],
+            session_id=payload.session_id,
         )
 
-    messages = build_messages(payload.query, hits)
+    messages = build_messages(payload.query, hits, history)
     max_output = min(settings.llm_max_tokens, settings.llm_max_tokens_cap)
     try:
         _get_quota_guard().reserve(
@@ -345,11 +385,13 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
             detail="generation service unavailable",
         ) from exc
 
+    _save_turn(payload.session_id, payload.query, answer)
     return ChatResponse(
         query=payload.query,
         answer=answer,
         model=client.model,
         sources=_sources_for_hits(hits),
+        session_id=payload.session_id,
     )
 
 
@@ -358,6 +400,7 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
     """SSE version of /api/v1/chat: sources first, then token chunks."""
     _guard_http(http_request, "chat")
     _reserve_embedding(payload.query)
+    history = _load_history(payload.session_id)
     try:
         retriever = _get_retriever()
         hits: list[SearchHit] = retriever.search(
@@ -383,11 +426,16 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
         "X-Accel-Buffering": "no",
     }
     if not hits:
+        _save_turn(payload.session_id, payload.query, REFUSAL)
+
         def refusal_stream() -> Iterator[str]:
             yield _sse("sources", {"sources": []})
             yield _sse("token", {"text": REFUSAL})
             yield _sse("usage", {"input_tokens": None, "output_tokens": None})
-            yield _sse("done", {"model": settings.llm_model})
+            yield _sse(
+                "done",
+                {"model": settings.llm_model, "session_id": payload.session_id},
+            )
 
         return StreamingResponse(
             refusal_stream(),
@@ -395,7 +443,7 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
             headers=headers,
         )
 
-    messages = build_messages(payload.query, hits)
+    messages = build_messages(payload.query, hits, history)
     max_output = min(settings.llm_max_tokens, settings.llm_max_tokens_cap)
     try:
         _get_quota_guard().reserve(
@@ -424,16 +472,22 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
             "sources",
             {"sources": [source.model_dump() for source in sources]},
         )
+        parts: list[str] = []
         try:
             for chunk in client.stream(messages):
+                parts.append(chunk)
                 yield _sse("token", {"text": chunk})
         except Exception:  # noqa: BLE001 - errors must be explicit in SSE
             yield _sse("error", {"message": "generation stream failed"})
             return
+        _save_turn(payload.session_id, payload.query, "".join(parts))
         # The OpenAI-compatible stream does not expose usage in all providers;
         # keep the event for the fixed SSE contract, with null counts.
         yield _sse("usage", {"input_tokens": None, "output_tokens": None})
-        yield _sse("done", {"model": client.model})
+        yield _sse(
+            "done",
+            {"model": client.model, "session_id": payload.session_id},
+        )
 
     return StreamingResponse(
         token_stream(),
