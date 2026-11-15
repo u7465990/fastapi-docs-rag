@@ -99,6 +99,22 @@ def test_healthz() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+    assert response.headers["X-Request-ID"]
+
+
+def test_request_id_is_echoed_and_metrics_are_exposed() -> None:
+    response = client.get(
+        "/healthz",
+        headers={"X-Request-ID": "test-request-123"},
+    )
+
+    assert response.headers["X-Request-ID"] == "test-request-123"
+
+    metrics = client.get("/metrics")
+
+    assert metrics.status_code == 200
+    assert "rag_http_requests_total" in metrics.text
+    assert 'path="/healthz"' in metrics.text
 
 
 def test_root_identifies_service() -> None:

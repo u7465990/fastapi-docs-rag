@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import Iterator
 from functools import lru_cache
 from typing import Any
@@ -11,7 +12,7 @@ from typing import Any
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
 
@@ -35,6 +36,13 @@ from langchain_rag.generation.session import (
     make_session_store,
 )
 from langchain_rag.indexing.embedder import make_embedder
+from langchain_rag.observability.metrics import (
+    log_request,
+    metrics,
+    request_id_from_header,
+    reset_request_id,
+    set_request_id,
+)
 from langchain_rag.retrieval.dense import DenseRetriever, SearchHit
 from langchain_rag.security import (
     RateLimiter,
@@ -68,6 +76,35 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def observe_http(request: Request, call_next):
+    request_id = request_id_from_header(request.headers.get("x-request-id"))
+    token = set_request_id(request_id)
+    start = time.perf_counter()
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000
+        metrics.record_request(
+            request.method,
+            request.url.path,
+            status,
+            duration_ms,
+        )
+        log_request(
+            method=request.method,
+            path=request.url.path,
+            status=status,
+            duration_ms=duration_ms,
+            client=request.client.host if request.client else "unknown",
+        )
+        reset_request_id(token)
+
+
 @app.get("/")
 async def root() -> dict[str, str]:
     return {
@@ -82,6 +119,14 @@ async def root() -> dict[str, str]:
 async def healthz() -> dict[str, str]:
     """Liveness probe. Does not check external dependencies."""
     return {"status": "ok"}
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics_view() -> PlainTextResponse:
+    return PlainTextResponse(
+        metrics.render(),
+        media_type="text/plain; version=0.0.4",
+    )
 
 
 async def _check_qdrant(settings: Settings) -> dict[str, Any]:
@@ -272,6 +317,7 @@ def _guard_http(http_request: Request, scope: str) -> None:
     try:
         _get_rate_limiter().check(scope, client_identifier(http_request))
     except RateLimitExceeded as exc:
+        metrics.record_quota_rejection("rate_limit")
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     except RateLimitUnavailable as exc:
         raise HTTPException(
@@ -285,12 +331,14 @@ def _reserve_embedding(query: str) -> None:
     try:
         _get_embedding_quota().reserve(estimated)
     except QuotaExceeded as exc:
+        metrics.record_quota_rejection("embedding")
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     except QuotaUnavailable as exc:
         raise HTTPException(
             status_code=503,
             detail="embedding quota unavailable",
         ) from exc
+    metrics.record_tokens("embedding", estimated)
 
 
 @app.post("/api/v1/search", response_model=SearchResponse)
@@ -364,17 +412,18 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
 
     messages = build_messages(payload.query, hits, history)
     max_output = min(settings.llm_max_tokens, settings.llm_max_tokens_cap)
+    estimated_llm = estimate_chat_tokens(messages, max_output)
     try:
-        _get_quota_guard().reserve(
-            estimate_chat_tokens(messages, max_output)
-        )
+        _get_quota_guard().reserve(estimated_llm)
     except QuotaExceeded as exc:
+        metrics.record_quota_rejection("llm")
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     except QuotaUnavailable as exc:
         raise HTTPException(
             status_code=503,
             detail="quota service unavailable",
         ) from exc
+    metrics.record_tokens("llm", estimated_llm)
 
     try:
         client = _get_chat_client()
@@ -445,17 +494,18 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
 
     messages = build_messages(payload.query, hits, history)
     max_output = min(settings.llm_max_tokens, settings.llm_max_tokens_cap)
+    estimated_llm = estimate_chat_tokens(messages, max_output)
     try:
-        _get_quota_guard().reserve(
-            estimate_chat_tokens(messages, max_output)
-        )
+        _get_quota_guard().reserve(estimated_llm)
     except QuotaExceeded as exc:
+        metrics.record_quota_rejection("llm")
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     except QuotaUnavailable as exc:
         raise HTTPException(
             status_code=503,
             detail="quota service unavailable",
         ) from exc
+    metrics.record_tokens("llm", estimated_llm)
 
     try:
         client = _get_chat_client()
@@ -509,6 +559,13 @@ async def readyz() -> JSONResponse:
         "config": {"ok": not missing, "missing": missing},
         "qdrant": qdrant,
         "redis": redis_check,
+        "llm": {
+            "ok": bool(settings.llm_api_key and settings.llm_model),
+            "model": settings.llm_model,
+            # A live completion probe would spend quota on every readiness
+            # check; this validates configuration only.
+            "mode": "config_only",
+        },
     }
     ok = all(check.get("ok") for check in checks.values())
     return JSONResponse(

@@ -13,7 +13,7 @@ install-rag:
 dev:
 	$(RUN) python -m langchain_rag.cli
 
-up: web-build
+up:
 	docker compose up -d --build
 
 web-build:

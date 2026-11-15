@@ -41,7 +41,7 @@ cp .env.example .env                # Windows PowerShell: Copy-Item .env.example
 # 然后填入 LLM_API_KEY、EMBEDDING_API_KEY
 uv run --no-sync python scripts/check_providers.py   # 先验证 Key / 模型 / 端点
 
-# 3. 启动 Qdrant + Redis + API（首次会构建 API 镜像）
+# 3. 构建并启动 Qdrant + Redis + API + Web（Web 在 Docker 内 npm build）
 docker compose up -d --build
 docker compose logs -f api
 
@@ -51,16 +51,10 @@ uv run --no-sync python scripts/ingest.py
 # 5. 用固定问题跑检索 smoke
 uv run --no-sync python scripts/smoke_search.py
 
-# 6. 构建前端并由 nginx 托管（生产模式，不用 vite dev）
-cd apps/web
-npm install
-npm run build
-cd ../..
-docker compose up -d --build web
-# 打开 http://localhost:8080
+# 6. 打开 http://localhost:8080（生产模式，不用 vite dev）
 ```
 
-开发时仍可单独跑 `cd apps/web && npm run dev`，Vite 会把 `/api` 代理到 `127.0.0.1:8000`；这个 5173 端口只用于本机开发，不要暴露到公网。
+开发时仍可单独跑 `cd apps/web && npm install && npm run dev`，Vite 会把 `/api` 代理到 `127.0.0.1:8000`；这个 5173 端口只用于本机开发，不要暴露到公网。生产镜像不依赖本机 `dist`，`Dockerfile.web` 在容器内执行 `npm ci && npm run build`。
 
 API 默认跑在 Docker 里。调试时也可以停掉 api 容器，改用宿主机：
 
@@ -138,6 +132,42 @@ sources -> token* -> usage -> done
 - 不传 `session_id` 就是单轮，不读写历史
 - session_id 不是登录身份；别人拿到它就能读历史，正式上线必须配真实鉴权
 
+### 观测
+
+- 每个请求都有 `X-Request-ID`；不传则自动生成，响应头回传
+- 请求日志是 JSON 行，包含 request_id、method、path、status、duration_ms、client
+- `GET /metrics` 输出 Prometheus 文本格式：
+  - `rag_http_requests_total{method,path,status}`
+  - `rag_http_request_duration_ms{path,quantile}`（p50/p95，内存窗口）
+  - `rag_tokens_reserved_total{kind}`（LLM/embedding 预占 token）
+  - `rag_quota_rejections_total{scope}`
+- `/readyz` 负责 Qdrant / Redis / 配置 / LLM 配置检查（LLM 只检查 key+model，不每次发真实 completion，避免烧额度）
+- `/metrics` 当前不鉴权，生产只应让内部监控访问，不要直接暴露公网
+- 记录的是**预占 token 数**，不是供应商账单金额
+- 指标是进程内内存；当前单 worker 足够，多 worker 部署时需要 Prometheus 聚合
+
+```bash
+curl -s http://localhost:8000/metrics | head
+```
+
+### 可复现构建
+
+两个镜像都从 Docker 构建，不依赖本机产物：
+
+- `Dockerfile.api`：Python 依赖层 + 源码层
+- `Dockerfile.web`：Node 阶段执行 `npm ci && npm run build`，Nginx 阶段只复制 `dist`
+
+```bash
+# 空环境一条命令构建全部
+docker compose up -d --build
+
+# 单独验证干净构建
+docker build --no-cache -f docker/Dockerfile.api -t fastapi-docs-rag-api:clean .
+docker compose --progress=plain build --no-cache web
+```
+
+`make up` 同样会构建全部镜像；它不再要求本机先执行 `npm run build`。
+
 常用命令：
 
 ```bash
@@ -151,7 +181,7 @@ uv run --no-sync python scripts/load_search.py    # 8 路并发检索延迟
 uv run --no-sync python scripts/evaluate.py       # 30 条 golden set 的检索基线
 ```
 
-`make install` / `make test` / `make lint` 是上面的薄封装。
+`make install` / `make test` / `make lint` 是上面的薄封装；`make up` 会从空环境构建全部镜像（包括前端），不要求本机有 `apps/web/dist`。
 
 启动后：
 
