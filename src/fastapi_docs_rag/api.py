@@ -16,35 +16,35 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
 
-from langchain_rag import __version__
-from langchain_rag.config import Settings, get_settings
-from langchain_rag.generation.chat import (
+from fastapi_docs_rag import __version__
+from fastapi_docs_rag.config import Settings, get_settings
+from fastapi_docs_rag.generation.chat import (
     REFUSAL,
     build_messages,
     estimate_chat_tokens,
 )
-from langchain_rag.generation.llm import ChatClient, make_chat_client
-from langchain_rag.generation.quota import (
+from fastapi_docs_rag.generation.llm import ChatClient, make_chat_client
+from fastapi_docs_rag.generation.quota import (
     DailyQuota,
     QuotaExceeded,
     QuotaUnavailable,
     make_daily_quota,
 )
-from langchain_rag.generation.session import (
+from fastapi_docs_rag.generation.session import (
     SessionStore,
     SessionUnavailable,
     make_session_store,
 )
-from langchain_rag.indexing.embedder import make_embedder
-from langchain_rag.observability.metrics import (
+from fastapi_docs_rag.indexing.embedder import make_embedder
+from fastapi_docs_rag.observability.metrics import (
     log_request,
     metrics,
     request_id_from_header,
     reset_request_id,
     set_request_id,
 )
-from langchain_rag.retrieval.dense import DenseRetriever, SearchHit
-from langchain_rag.security import (
+from fastapi_docs_rag.retrieval.dense import DenseRetriever, SearchHit
+from fastapi_docs_rag.security import (
     RateLimiter,
     RateLimitExceeded,
     RateLimitUnavailable,

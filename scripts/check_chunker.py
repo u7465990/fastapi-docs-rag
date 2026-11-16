@@ -10,8 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from langchain_rag.indexing.chunker import chunk_document  # noqa: E402
-from langchain_rag.ingestion.parser import iter_documents  # noqa: E402
+from fastapi_docs_rag.indexing.chunker import chunk_document  # noqa: E402
+from fastapi_docs_rag.ingestion.parser import iter_documents  # noqa: E402
 
 
 def _stats(values: list[int]) -> str:

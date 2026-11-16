@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from redis.exceptions import RedisError
 from starlette.requests import Request
 
-from langchain_rag.security import (
+from fastapi_docs_rag.security import (
     RateLimiter,
     RateLimitExceeded,
     RateLimitUnavailable,

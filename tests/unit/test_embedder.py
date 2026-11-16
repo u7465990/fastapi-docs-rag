@@ -5,8 +5,8 @@ import json
 import httpx
 import pytest
 
-from langchain_rag.config import Settings
-from langchain_rag.indexing.embedder import (
+from fastapi_docs_rag.config import Settings
+from fastapi_docs_rag.indexing.embedder import (
     EmbeddingError,
     OpenAICompatibleEmbedder,
     make_embedder,

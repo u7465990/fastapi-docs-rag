@@ -60,7 +60,7 @@ API 默认跑在 Docker 里。调试时也可以停掉 api 容器，改用宿主
 
 ```bash
 docker compose stop api
-uv run --no-sync python -m langchain_rag.cli
+uv run --no-sync python -m fastapi_docs_rag.cli
 ```
 
 索引默认写入临时 collection `fastapi_docs_build_<ts>`，成功后原子切换 alias `fastapi_docs_current`；旧 build 保留用于回滚。只想看切分和版本字段时加 `--dry-run`，不调用 embedding。

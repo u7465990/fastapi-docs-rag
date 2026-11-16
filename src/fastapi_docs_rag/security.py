@@ -10,7 +10,7 @@ from fastapi import HTTPException, Request
 from redis import Redis
 from redis.exceptions import RedisError
 
-from langchain_rag.config import Settings
+from fastapi_docs_rag.config import Settings
 
 RATE_LIMIT_TTL_SECONDS = 90
 

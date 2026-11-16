@@ -3,7 +3,7 @@
 import subprocess
 from pathlib import Path
 
-from langchain_rag.ingestion.source import detect_source_info
+from fastapi_docs_rag.ingestion.source import detect_source_info
 
 
 def test_detects_release_notes_version(tmp_path: Path) -> None:

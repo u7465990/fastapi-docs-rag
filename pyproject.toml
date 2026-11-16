@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "langchain-rag"
+name = "fastapi-docs-rag"
 version = "0.1.0"
 description = "Version-aware RAG over FastAPI documentation"
 readme = "README.md"
@@ -36,7 +36,7 @@ dev = [
 ]
 
 [project.scripts]
-langchain-rag-serve = "langchain_rag.cli:main"
+fastapi-docs-rag-serve = "fastapi_docs_rag.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -60,7 +60,7 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.mypy]
 python_version = "3.11"
 mypy_path = "src"
-packages = ["langchain_rag"]
+packages = ["fastapi_docs_rag"]
 check_untyped_defs = true
 ignore_missing_imports = true
 warn_unused_ignores = true

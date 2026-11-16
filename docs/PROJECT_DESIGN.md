@@ -85,7 +85,7 @@
 | 工作目录 | `D:\ANU\LangChain-rag`，已有文档与数据源 | ✅ |
 | Python | 3.11.11（conda `comp4528`） | ✅ 版本合适，但需新建环境 |
 | 已有包 | LangChain / LangGraph / FastAPI / Chroma / sentence-transformers / torch | ✅ 可参考，但建议新建环境 |
-| Conda | 24.11.2，已有多个环境 | ✅ 建议新建 `langchain-rag` |
+| Conda | 24.11.2，已有多个环境 | ✅ 建议新建 `fastapi-docs-rag` |
 | uv / poetry | 未安装 | ⚠️ 可选，`pip install uv` 即可 |
 | Docker | 29.7.2，daemon 正常，Compose 可用 | ✅ |
 | Docker Hub | 直连超时，已配置国内镜像 | ✅ 镜像拉取实测成功 |
@@ -110,8 +110,8 @@
 2. **不要把所有中间件都塞进 Docker。** 16GB 内存下，建议只跑 Qdrant + Redis；FastAPI、采集脚本、评估脚本跑在宿主机。Langfuse 全家桶后续再考虑，先用 LangSmith 云端的免费额度。
 3. **新建专用 conda 环境**，避免污染 `comp4528` 课程环境：
    ```bash
-   conda create -n langchain-rag python=3.11 -y
-   conda activate langchain-rag
+   conda create -n fastapi-docs-rag python=3.11 -y
+   conda activate fastapi-docs-rag
    pip install -U pip uv
    ```
 4. **Docker Desktop 建议分配 6GB 左右内存**，并确认 Qdrant / Redis 端口未被占用（6333、6334、6379）。
@@ -1052,7 +1052,7 @@ D:\ANU\LangChain-rag\
 │  ├─ api/                     # FastAPI 应用（如拆分部署）
 │  └─ web/                     # Vite + React + TypeScript
 ├─ src/
-│  └─ langchain_rag/
+│  └─ fastapi_docs_rag/
 │     ├─ config.py             # Pydantic Settings
 │     ├─ ingestion/
 │     │  ├─ fetcher.py         # Git clone / sparse checkout
@@ -1127,7 +1127,7 @@ D:\ANU\LangChain-rag\
 
 ### Phase 0：环境与骨架（0.5~1 天）
 
-- 新建 conda 环境 `langchain-rag`。
+- 新建 conda 环境 `fastapi-docs-rag`。
 - 初始化 pyproject、目录结构、`.env.example`（含版本 / 增量配置）。
 - `docker compose up -d qdrant redis`。
 - 跑通 FastAPI `/healthz`。

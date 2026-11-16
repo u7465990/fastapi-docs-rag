@@ -3,11 +3,11 @@
 import pytest
 from fastapi.testclient import TestClient
 
-import langchain_rag.api as api
-from langchain_rag.api import app
-from langchain_rag.generation.chat import REFUSAL
-from langchain_rag.generation.quota import QuotaExceeded
-from langchain_rag.retrieval.dense import SearchHit
+import fastapi_docs_rag.api as api
+from fastapi_docs_rag.api import app
+from fastapi_docs_rag.generation.chat import REFUSAL
+from fastapi_docs_rag.generation.quota import QuotaExceeded
+from fastapi_docs_rag.retrieval.dense import SearchHit
 
 client = TestClient(app)
 

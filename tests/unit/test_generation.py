@@ -1,7 +1,7 @@
 """Tests for grounded answer generation."""
 
-from langchain_rag.generation.chat import REFUSAL, build_context, generate_answer
-from langchain_rag.retrieval.dense import SearchHit
+from fastapi_docs_rag.generation.chat import REFUSAL, build_context, generate_answer
+from fastapi_docs_rag.retrieval.dense import SearchHit
 
 
 class FakeChatClient:

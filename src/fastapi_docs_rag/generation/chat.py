@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from langchain_rag.generation.llm import ChatClient
-from langchain_rag.retrieval.dense import SearchHit
+from fastapi_docs_rag.generation.llm import ChatClient
+from fastapi_docs_rag.retrieval.dense import SearchHit
 
 MAX_SOURCE_CHARS = 5000
 

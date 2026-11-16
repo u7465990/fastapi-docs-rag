@@ -8,8 +8,8 @@ from typing import Any
 from qdrant_client import QdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue
 
-from langchain_rag.indexing.embedder import Embedder
-from langchain_rag.indexing.indexer import DENSE_VECTOR_NAME
+from fastapi_docs_rag.indexing.embedder import Embedder
+from fastapi_docs_rag.indexing.indexer import DENSE_VECTOR_NAME
 
 
 @dataclass(frozen=True)

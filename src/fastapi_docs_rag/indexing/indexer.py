@@ -25,10 +25,10 @@ from qdrant_client.models import (
     VectorParams,
 )
 
-from langchain_rag.indexing.chunker import Chunk
-from langchain_rag.indexing.embedder import Embedder
-from langchain_rag.ingestion.parser import ParsedDocument
-from langchain_rag.ingestion.source import SourceInfo
+from fastapi_docs_rag.indexing.chunker import Chunk
+from fastapi_docs_rag.indexing.embedder import Embedder
+from fastapi_docs_rag.ingestion.parser import ParsedDocument
+from fastapi_docs_rag.ingestion.source import SourceInfo
 
 DENSE_VECTOR_NAME = "dense"
 UPSERT_BATCH_SIZE = 128

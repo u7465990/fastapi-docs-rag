@@ -11,8 +11,8 @@ ARG PIP_INDEX_URL=https://pypi.org/simple
 COPY pyproject.toml README.md ./
 # Install dependencies against a stub package first, so editing application
 # code later only reruns the fast no-deps package install.
-RUN mkdir -p src/langchain_rag \
-    && printf '__version__ = "0.0.0"\n' > src/langchain_rag/__init__.py \
+RUN mkdir -p src/fastapi_docs_rag \
+    && printf '__version__ = "0.0.0"\n' > src/fastapi_docs_rag/__init__.py \
     && pip install --index-url "$PIP_INDEX_URL" .
 
 COPY src ./src
@@ -20,4 +20,4 @@ RUN pip install --no-deps --force-reinstall --index-url "$PIP_INDEX_URL" .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "langchain_rag.api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "fastapi_docs_rag.api:app", "--host", "0.0.0.0", "--port", "8000"]

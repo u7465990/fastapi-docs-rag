@@ -15,8 +15,8 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from langchain_rag.config import Settings, get_settings  # noqa: E402
-from langchain_rag.indexing.embedder import make_embedder  # noqa: E402
+from fastapi_docs_rag.config import Settings, get_settings  # noqa: E402
+from fastapi_docs_rag.indexing.embedder import make_embedder  # noqa: E402
 
 
 def _chat_url(base_url: str) -> str:

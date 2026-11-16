@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from langchain_rag.config import Settings
+from fastapi_docs_rag.config import Settings
 
 
 def test_defaults() -> None:

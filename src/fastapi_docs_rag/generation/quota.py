@@ -14,7 +14,7 @@ from typing import Any
 from redis import Redis
 from redis.exceptions import RedisError
 
-from langchain_rag.config import Settings
+from fastapi_docs_rag.config import Settings
 
 QUOTA_TTL_SECONDS = 2 * 24 * 60 * 60
 

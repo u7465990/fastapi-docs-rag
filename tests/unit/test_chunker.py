@@ -3,8 +3,8 @@
 import re
 from pathlib import Path
 
-from langchain_rag.indexing.chunker import chunk_document, count_tokens
-from langchain_rag.ingestion.parser import ParsedDocument, parse_markdown
+from fastapi_docs_rag.indexing.chunker import chunk_document, count_tokens
+from fastapi_docs_rag.ingestion.parser import ParsedDocument, parse_markdown
 
 
 def _doc_at(tmp_path: Path, relative: str, text: str) -> ParsedDocument:

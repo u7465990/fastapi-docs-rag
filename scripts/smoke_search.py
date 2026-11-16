@@ -10,9 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from qdrant_client import QdrantClient  # noqa: E402
 
-from langchain_rag.config import get_settings  # noqa: E402
-from langchain_rag.indexing.embedder import make_embedder  # noqa: E402
-from langchain_rag.retrieval.dense import DenseRetriever  # noqa: E402
+from fastapi_docs_rag.config import get_settings  # noqa: E402
+from fastapi_docs_rag.indexing.embedder import make_embedder  # noqa: E402
+from fastapi_docs_rag.retrieval.dense import DenseRetriever  # noqa: E402
 
 # (Chinese query, accepted URL fragments)
 SMOKE_QUERIES: tuple[tuple[str, tuple[str, ...]], ...] = (

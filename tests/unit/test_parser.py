@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from langchain_rag.ingestion.parser import (
+from fastapi_docs_rag.ingestion.parser import (
     guess_doc_type,
     parse_markdown,
     url_for,

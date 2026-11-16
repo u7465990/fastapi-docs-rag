@@ -4,10 +4,10 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
-from langchain_rag.indexing.chunker import chunk_document
-from langchain_rag.indexing.indexer import QdrantIndexer
-from langchain_rag.ingestion.parser import parse_markdown
-from langchain_rag.ingestion.source import SourceInfo
+from fastapi_docs_rag.indexing.chunker import chunk_document
+from fastapi_docs_rag.indexing.indexer import QdrantIndexer
+from fastapi_docs_rag.ingestion.parser import parse_markdown
+from fastapi_docs_rag.ingestion.source import SourceInfo
 
 
 class FakeEmbedder:

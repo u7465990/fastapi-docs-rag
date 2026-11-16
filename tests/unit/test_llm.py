@@ -4,8 +4,8 @@ import json
 
 import httpx
 
-from langchain_rag.config import Settings
-from langchain_rag.generation.llm import OpenAICompatibleChatClient, make_chat_client
+from fastapi_docs_rag.config import Settings
+from fastapi_docs_rag.generation.llm import OpenAICompatibleChatClient, make_chat_client
 
 
 def test_max_tokens_is_capped() -> None:

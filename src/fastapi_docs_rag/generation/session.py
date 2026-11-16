@@ -9,7 +9,7 @@ from typing import Any
 from redis import Redis
 from redis.exceptions import RedisError
 
-from langchain_rag.config import Settings
+from fastapi_docs_rag.config import Settings
 
 SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 MAX_MESSAGES = 12

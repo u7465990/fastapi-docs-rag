@@ -11,12 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from qdrant_client import QdrantClient  # noqa: E402
 
-from langchain_rag.config import get_settings  # noqa: E402
-from langchain_rag.indexing.chunker import chunk_documents  # noqa: E402
-from langchain_rag.indexing.embedder import make_embedder  # noqa: E402
-from langchain_rag.indexing.indexer import QdrantIndexer  # noqa: E402
-from langchain_rag.ingestion.parser import iter_documents  # noqa: E402
-from langchain_rag.ingestion.source import detect_source_info  # noqa: E402
+from fastapi_docs_rag.config import get_settings  # noqa: E402
+from fastapi_docs_rag.indexing.chunker import chunk_documents  # noqa: E402
+from fastapi_docs_rag.indexing.embedder import make_embedder  # noqa: E402
+from fastapi_docs_rag.indexing.indexer import QdrantIndexer  # noqa: E402
+from fastapi_docs_rag.ingestion.parser import iter_documents  # noqa: E402
+from fastapi_docs_rag.ingestion.source import detect_source_info  # noqa: E402
 
 
 def main() -> None:

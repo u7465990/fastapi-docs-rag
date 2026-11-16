@@ -14,7 +14,7 @@ from threading import Lock
 
 _REQUEST_ID: ContextVar[str] = ContextVar("request_id", default="-")
 _VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
-logger = logging.getLogger("langchain_rag.http")
+logger = logging.getLogger("fastapi_docs_rag.http")
 logger.setLevel(logging.INFO)
 logger.propagate = False
 if not logger.handlers:

@@ -11,7 +11,7 @@ install-rag:
 	$(UV) sync --extra dev --extra rag
 
 dev:
-	$(RUN) python -m langchain_rag.cli
+	$(RUN) python -m fastapi_docs_rag.cli
 
 up:
 	docker compose up -d --build

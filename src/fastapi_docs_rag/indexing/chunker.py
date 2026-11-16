@@ -18,7 +18,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from langchain_rag.ingestion.parser import (
+from fastapi_docs_rag.ingestion.parser import (
     CODE_FENCE_RE,
     ParsedDocument,
     Section,

@@ -4,11 +4,11 @@ from pathlib import Path
 
 from qdrant_client import QdrantClient
 
-from langchain_rag.indexing.chunker import chunk_document
-from langchain_rag.indexing.indexer import QdrantIndexer
-from langchain_rag.ingestion.parser import parse_markdown
-from langchain_rag.ingestion.source import SourceInfo
-from langchain_rag.retrieval.dense import DenseRetriever, build_filter
+from fastapi_docs_rag.indexing.chunker import chunk_document
+from fastapi_docs_rag.indexing.indexer import QdrantIndexer
+from fastapi_docs_rag.ingestion.parser import parse_markdown
+from fastapi_docs_rag.ingestion.source import SourceInfo
+from fastapi_docs_rag.retrieval.dense import DenseRetriever, build_filter
 
 
 class ConstantEmbedder:

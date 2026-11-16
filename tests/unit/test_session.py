@@ -3,7 +3,7 @@
 import pytest
 from redis.exceptions import RedisError
 
-from langchain_rag.generation.session import SessionStore, SessionUnavailable
+from fastapi_docs_rag.generation.session import SessionStore, SessionUnavailable
 
 
 class FakePipeline:

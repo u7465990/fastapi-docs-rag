@@ -14,7 +14,7 @@ from typing import Protocol
 
 import httpx
 
-from langchain_rag.config import Settings
+from fastapi_docs_rag.config import Settings
 
 
 class EmbeddingError(RuntimeError):

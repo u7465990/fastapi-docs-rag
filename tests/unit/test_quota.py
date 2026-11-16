@@ -3,7 +3,7 @@
 import pytest
 from redis.exceptions import RedisError
 
-from langchain_rag.generation.quota import DailyQuota, QuotaExceeded, QuotaUnavailable
+from fastapi_docs_rag.generation.quota import DailyQuota, QuotaExceeded, QuotaUnavailable
 
 
 class FakeRedis:
