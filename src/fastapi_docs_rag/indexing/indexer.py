@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -52,6 +52,8 @@ class IndexStats:
     documents: int
     children: int
     vectors: int
+    reused_vectors: int = 0
+    embedded_vectors: int = 0
 
 
 def point_id_for(chunk_id: str) -> str:
@@ -147,16 +149,38 @@ class QdrantIndexer:
         embedder: Embedder,
         source: SourceInfo,
         build_id: str,
+        reuse_vectors: Mapping[str, Sequence[float]] | None = None,
     ) -> IndexStats:
         payloads = build_payloads(documents, chunks, source=source, build_id=build_id)
         if not payloads:
             raise ValueError("no child chunks to index")
 
-        vectors = embedder.embed([chunk.embed_text for chunk, _ in payloads])
-        if len(vectors) != len(payloads):
-            raise ValueError(
-                f"embedder returned {len(vectors)} vectors for {len(payloads)} chunks"
+        vectors: list[list[float] | None] = [None] * len(payloads)
+        missing_indices: list[int] = []
+        missing_texts: list[str] = []
+        for index, (chunk, _payload) in enumerate(payloads):
+            candidate = (
+                reuse_vectors.get(chunk.chunk_id) if reuse_vectors is not None else None
             )
+            if candidate is not None and len(candidate) == self.vector_size:
+                vectors[index] = [float(value) for value in candidate]
+            else:
+                missing_indices.append(index)
+                missing_texts.append(chunk.embed_text)
+
+        if missing_texts:
+            embedded = embedder.embed(missing_texts)
+            if len(embedded) != len(missing_texts):
+                raise ValueError(
+                    f"embedder returned {len(embedded)} vectors for "
+                    f"{len(missing_texts)} chunks"
+                )
+            for index, vector in zip(missing_indices, embedded, strict=True):
+                vectors[index] = vector
+
+        final_vectors = [vector for vector in vectors if vector is not None]
+        if len(final_vectors) != len(payloads):
+            raise ValueError("failed to assign a vector to every child chunk")
 
         build_collection = self.build_collection_name(build_id)
         self._create_collection(build_collection)
@@ -166,7 +190,7 @@ class QdrantIndexer:
                 vector={DENSE_VECTOR_NAME: vector},
                 payload=payload,
             )
-            for (chunk, payload), vector in zip(payloads, vectors, strict=True)
+            for (chunk, payload), vector in zip(payloads, final_vectors, strict=True)
         ]
         for start in range(0, len(points), self.upsert_batch_size):
             self.client.upsert(
@@ -183,7 +207,9 @@ class QdrantIndexer:
             alias=alias,
             documents=len(documents),
             children=len(payloads),
-            vectors=len(vectors),
+            vectors=len(final_vectors),
+            reused_vectors=len(payloads) - len(missing_texts),
+            embedded_vectors=len(missing_texts),
         )
 
     def _create_collection(self, collection_name: str) -> None:

@@ -15,6 +15,10 @@ from fastapi_docs_rag.config import get_settings  # noqa: E402
 from fastapi_docs_rag.indexing.chunker import chunk_documents  # noqa: E402
 from fastapi_docs_rag.indexing.embedder import make_embedder  # noqa: E402
 from fastapi_docs_rag.indexing.indexer import QdrantIndexer  # noqa: E402
+from fastapi_docs_rag.indexing.manifest import (  # noqa: E402
+    IndexManifest,
+    build_manifest,
+)
 from fastapi_docs_rag.ingestion.parser import iter_documents  # noqa: E402
 from fastapi_docs_rag.ingestion.source import detect_source_info  # noqa: E402
 
@@ -37,6 +41,11 @@ def main() -> None:
     parser.add_argument("--build-id", default=None)
     parser.add_argument("--no-alias", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("data/manifests/index_manifest.json"),
+    )
     args = parser.parse_args()
 
     repo_root = args.repo.resolve()
@@ -56,7 +65,10 @@ def main() -> None:
         release_notes_latest_versions=args.release_notes_versions,
     )
     children = [chunk for chunk in chunks if chunk.level == "child"]
-    source = detect_source_info(repo_root)
+    source = detect_source_info(
+        repo_root,
+        fallback_source_ref=settings.docs_source_ref,
+    )
     build_id = args.build_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
     print(f"documents:      {len(documents)}")
@@ -95,9 +107,24 @@ def main() -> None:
         if close is not None:
             close()
 
+    manifest = build_manifest(
+        build_id=build_id,
+        build_collection=stats.build_collection,
+        source=source,
+        embedding_model=settings.embedding_model,
+        embedding_dim=settings.embedding_dim,
+        documents=documents,
+        chunks=chunks,
+        previous=IndexManifest.load(args.manifest),
+    )
+    manifest.save(args.manifest)
+
     print(f"build_collection: {stats.build_collection}")
     print(f"alias:            {stats.alias}")
     print(f"vectors:          {stats.vectors}")
+    print(f"reused_vectors:   {stats.reused_vectors}")
+    print(f"embedded_vectors: {stats.embedded_vectors}")
+    print(f"manifest:         {args.manifest}")
     print("index complete")
 
 

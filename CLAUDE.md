@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/fastapi_docs_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense + BM25 hybrid retrieval、`/api/v1/search`、`/api/v1/chat`、`/api/v1/chat/stream` SSE、多轮会话、前端聊天页、Docker API、Nginx 静态托管、30 条 golden set 检索评估、14 条生成/引用/拒答评估、lexical rerank、GitHub Actions CI、HTTP 限流/access token/embedding 额度、request_id/JSON 日志/`/metrics` 已实现；cross-encoder、版本增量索引与并发调优尚未实现。
+**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/fastapi_docs_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense + BM25 hybrid retrieval、`/api/v1/search`、`/api/v1/chat`、`/api/v1/chat/stream` SSE、多轮会话、前端聊天页、Docker API、Nginx 静态托管、30 条 golden set 检索评估、14 条生成/引用/拒答评估、lexical rerank、manifest 增量索引、GitHub Actions CI、HTTP 限流/access token/embedding 额度、request_id/JSON 日志/`/metrics` 已实现；cross-encoder、生成评估扩展与并发调优尚未实现。
 
-FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库；当前 C 工作区是**文件快照，不含 `.git`**，实现增量索引前需按 README 重建 sparse checkout）：
+FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库；当前 C 工作区是**文件快照，不含 `.git`**。此时 `source_ref` 用 `DOCS_SOURCE_REF` 或上一版 manifest 继承；恢复 Git 后会自动读取 HEAD）：
 
 - 仓库：`https://github.com/fastapi/fastapi`
 - 快照：`7a0a3f0b286c6c865cf4398ea0e957a87b8bffa4`（2026-10-23）
@@ -64,13 +64,13 @@ npm run dev     # Vite dev server: http://localhost:5173
 npm run build   # 生产静态文件
 npm run lint
 
-# 索引与评估（ingest / evaluate 已实现；增量 / 变更报告脚本尚未实现）
+# 索引与评估（ingest / evaluate / manifest 增量索引已实现；Git diff 尚未接入）
 uv run --no-sync python scripts/check_providers.py   # 验证 embedding / chat Key
 uv run --no-sync python scripts/ingest.py
 uv run --no-sync python scripts/ingest.py --dry-run   # 只看解析/切分/版本字段
 uv run --no-sync python scripts/smoke_search.py       # 5 条固定问题的检索 smoke
 uv run --no-sync python scripts/load_search.py        # 8 路并发检索延迟
-uv run --no-sync python scripts/update_index.py     # 定时增量更新（项目签名）
+uv run --no-sync python scripts/update_index.py     # manifest 增量索引
 uv run --no-sync python scripts/diff_report.py      # 变更 / 陈旧度报告
 uv run --no-sync python scripts/rebuild_index.py
 uv run --no-sync python scripts/evaluate.py
@@ -118,7 +118,8 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 - 版本字段必须分开：`docs_version`（文档快照对应的 FastAPI 版本，来自 release notes / git tag；未知写 `"unknown"`）、`source_ref`（commit SHA）、`index_build_id`（构建标识）。
 - release notes 只保留最近 `RELEASE_NOTES_LATEST_VERSIONS`（默认 20）个版本进入普通索引；历史版本靠 git tag 重建，不要让 changelog 淹没普通问答。
 - 文档只维护“最新版”页面；历史版本通过 **git tag checkout** 重建快照，不要假设仓库里存在按版本分的文档目录。
-- 增量重建：只重嵌入变更 chunk，复用 embedding 缓存；全量点写入新 collection，alias 原子切换，保留上一版本可回滚。
+- 增量重建：`update_index.py` 读取 `data/manifests/index_manifest.json`，按 `chunk_id + content_sha256` 复用旧向量，只 embed 变更 chunk；全量点写入新 collection，alias 原子切换，保留上一版本可回滚。
+- 没有 `.git` 的快照可用 `DOCS_SOURCE_REF` 指定 commit；已有 manifest 时自动继承上一版 `source_ref`。Git diff 变更检测尚未接入，当前以内容哈希为准。
 - 废弃 API 不立即物理删除：标 `is_deprecated=true`，检索降权 / 按需过滤；确认删除后再清理。典型例子：`@app.on_event` → `lifespan`。
 - 必做指标：陈旧度、源变更→可检索延迟、重嵌入比例、版本归因准确率、废弃 API 识别率。
 - 更新调度放宿主机（Windows Task Scheduler / cron），不引入 Airflow / Celery。
@@ -156,7 +157,7 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 
 **配置与安全**
 - 所有配置走 `.env` + Pydantic Settings；`.env.example` 入库，`.env` 不入库；启动时校验必需配置，缺项 fail-fast。
-- `.env.example` 草案见设计文档附录 A，关键变量：`LLM_*`（含 `LLM_MAX_TOKENS_CAP`、`LLM_DAILY_REQUEST_LIMIT`、`LLM_DAILY_TOKEN_BUDGET`）、`EMBEDDING_*`（含 `EMBEDDING_BATCH_SIZE`、`EMBEDDING_DAILY_REQUEST_LIMIT`、`EMBEDDING_DAILY_TOKEN_BUDGET`）、`QDRANT_*`、`DOCS_REPO_URL`、`DOCS_REPO_BRANCH`、`INDEX_REFRESH_CRON`、`STALENESS_THRESHOLD_HOURS`、`DEFAULT_DOCS_VERSION`、`RELEASE_NOTES_LATEST_VERSIONS`、`EMBEDDING_CACHE_DIR`、`REDIS_URL`、`LANGSMITH_*`、`RETRIEVAL_*`、`RERANK_TOP_K`、`FINAL_TOP_K`、`ADMIN_API_KEY`、`API_ACCESS_TOKEN`、`RATE_LIMIT_*`。
+- `.env.example` 草案见设计文档附录 A，关键变量：`LLM_*`（含 `LLM_MAX_TOKENS_CAP`、`LLM_DAILY_REQUEST_LIMIT`、`LLM_DAILY_TOKEN_BUDGET`）、`EMBEDDING_*`（含 `EMBEDDING_BATCH_SIZE`、`EMBEDDING_DAILY_REQUEST_LIMIT`、`EMBEDDING_DAILY_TOKEN_BUDGET`）、`QDRANT_*`、`DOCS_REPO_URL`、`DOCS_REPO_BRANCH`、`DOCS_SOURCE_REF`、`INDEX_REFRESH_CRON`、`STALENESS_THRESHOLD_HOURS`、`DEFAULT_DOCS_VERSION`、`RELEASE_NOTES_LATEST_VERSIONS`、`EMBEDDING_CACHE_DIR`、`REDIS_URL`、`LANGSMITH_*`、`RETRIEVAL_*`、`RERANK_TOP_K`、`FINAL_TOP_K`、`ADMIN_API_KEY`、`API_ACCESS_TOKEN`、`RATE_LIMIT_*`。
 - 日志不打印 API Key、完整 prompt、用户敏感信息；admin 接口单独鉴权；限流按 IP / session / API key。
 - 采集遵守 `robots.txt`，限速约 1 req/s，不重新分发全文；FastAPI 文档仓库为 MIT，但仍只用于学习演示。
 

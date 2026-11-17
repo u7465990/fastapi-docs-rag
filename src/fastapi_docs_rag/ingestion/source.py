@@ -24,11 +24,19 @@ def detect_source_info(
     repo_root: Path,
     *,
     default_version: str = "unknown",
+    fallback_source_ref: str = "",
 ) -> SourceInfo:
-    """Read the release-notes version and git HEAD when available."""
+    """Read release-notes version and git HEAD, with a snapshot fallback."""
+    git_ref = _git_head(repo_root)
+    if git_ref == "unknown" and fallback_source_ref:
+        git_ref = (
+            fallback_source_ref
+            if fallback_source_ref.startswith(("git:", "snapshot:"))
+            else f"git:{fallback_source_ref}"
+        )
     return SourceInfo(
         docs_version=_release_notes_version(repo_root) or default_version,
-        source_ref=_git_head(repo_root),
+        source_ref=git_ref,
         fetched_at=datetime.now(UTC).isoformat(timespec="seconds"),
     )
 

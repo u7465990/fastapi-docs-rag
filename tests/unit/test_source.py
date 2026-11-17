@@ -28,6 +28,15 @@ def test_missing_release_notes_uses_fallback(tmp_path: Path) -> None:
     assert source.source_ref == "unknown"
 
 
+def test_snapshot_source_ref_fallback(tmp_path: Path) -> None:
+    source = detect_source_info(
+        tmp_path,
+        fallback_source_ref="7a0a3f0b286c6c865cf4398ea0e957a87b8bffa4",
+    )
+
+    assert source.source_ref == "git:7a0a3f0b286c6c865cf4398ea0e957a87b8bffa4"
+
+
 def test_source_ref_ignores_parent_repository(tmp_path: Path) -> None:
     snapshot = tmp_path / "data" / "raw" / "fastapi"
     snapshot.mkdir(parents=True)

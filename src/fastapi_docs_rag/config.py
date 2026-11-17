@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     docs_repo_url: str = "https://github.com/fastapi/fastapi.git"
     docs_repo_branch: str = "master"
     docs_checkout_dir: Path = Path("data/raw/fastapi")
+    # Used only when the docs directory is a plain snapshot without its own
+    # .git; a real Git checkout wins automatically.
+    docs_source_ref: str = ""
     index_refresh_cron: str = "0 3 * * *"
     staleness_threshold_hours: int = 24
     default_docs_version: str = "latest"

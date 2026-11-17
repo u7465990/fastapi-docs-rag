@@ -6,7 +6,7 @@
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense + BM25 hybrid retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估、14 条生成/引用/拒答评估、lexical rerank、CI 和 HTTP 限流/额度锁；下一步是版本感知增量索引与部署硬化。
+> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense + BM25 hybrid retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估、14 条生成/引用/拒答评估、lexical rerank、manifest 增量索引、CI 和 HTTP 限流/额度锁；下一步是部署硬化与 cross-encoder。
 
 ## 数据源
 
@@ -15,7 +15,7 @@
 - 英文文档：`docs/en/docs/**/*.md`（156 个）
 - 代码示例：`docs_src/**/*.py`（485 个）
 
-本地数据位于 `data/raw/fastapi/`，已被 `.gitignore` 排除，不进入仓库。当前工作区是文件快照（不含 `.git`）；需要更新或做增量索引时，先按下面命令重建 sparse checkout：
+本地数据位于 `data/raw/fastapi/`，已被 `.gitignore` 排除，不进入仓库。当前工作区是文件快照（不含 `.git`）；如果要做真正的 Git 变更检测，先按下面命令重建 sparse checkout。没有 `.git` 时，增量索引仍可通过 `content_sha256` 工作，`source_ref` 用 `DOCS_SOURCE_REF` 或上一版 manifest 继承：
 
 ```bash
 git clone --filter=blob:none --no-checkout https://github.com/fastapi/fastapi.git data/raw/fastapi
@@ -66,6 +66,35 @@ uv run --no-sync python -m fastapi_docs_rag.cli
 ```
 
 索引默认写入临时 collection `fastapi_docs_build_<ts>`，成功后原子切换 alias `fastapi_docs_current`；旧 build 保留用于回滚。只想看切分和版本字段时加 `--dry-run`，不调用 embedding。
+
+### 版本感知与增量索引
+
+- `scripts/update_index.py`：读取上一版 `data/manifests/index_manifest.json`，按 `chunk_id + content_sha256` 复用旧向量，只 embed 变更 chunk。
+- `scripts/diff_report.py`：报告 changed docs/chunks、reused chunks、`source_ref` 和 `stale_hours`。
+- payload 同时写 `docs_version`、`source_ref`、`index_build_id`。
+- 没有 `.git` 的快照可用 `DOCS_SOURCE_REF` 指定 commit；若已有 manifest，会自动继承上一版 `source_ref`。
+
+```bash
+# 第一次建 manifest；已有索引时会复用全部未变向量
+uv run --no-sync python scripts/update_index.py
+
+# 只报告，不写索引
+uv run --no-sync python scripts/diff_report.py
+
+# 全量重建
+uv run --no-sync python scripts/ingest.py
+```
+
+实测修改一篇文档后：
+
+```text
+changed_docs: 1
+changed_chunks: 1
+reused_vectors: 1362
+embedded_vectors: 1
+```
+
+改回原文后再跑一次，仍然只重新 embed 1 个 chunk。
 
 ### LLM 额度锁
 
@@ -220,7 +249,7 @@ LangChain / LangGraph · Qdrant（dense + sparse hybrid）· BM25 + RRF · Cross
 
 ## 后续计划
 
-按 Phase 0 → 1 → 2 → 2.5 → 3 → 4 → 5 推进：先搭骨架与 dense baseline，再做 hybrid + rerank 基线，随后实现版本感知增量索引，最后完成 Agentic RAG、评估闭环与工程化。
+按 Phase 0 → 1 → 2 → 2.5 → 3 → 4 → 5 推进：骨架、dense baseline、hybrid + rerank、manifest 增量索引已完成；下一步是部署硬化、cross-encoder 和更完整的生成评估。
 
 ## 本地环境
 

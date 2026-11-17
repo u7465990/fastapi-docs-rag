@@ -137,6 +137,33 @@ def test_index_writes_only_children_with_parent_context(tmp_path: Path) -> None:
     assert client.alias_operations[-1].create_alias.alias_name == "fastapi_docs_current"
 
 
+def test_index_reuses_vectors_without_embedding(tmp_path: Path) -> None:
+    doc, chunks = _make_doc(tmp_path)
+    children = [chunk for chunk in chunks if chunk.level == "child"]
+    embedder = FakeEmbedder()
+    client = FakeQdrantClient()
+    indexer = QdrantIndexer(
+        client,
+        vector_size=4,
+        build_prefix="fastapi_docs_build",
+        alias="fastapi_docs_current",
+    )
+    reuse = {chunk.chunk_id: [0.1, 0.2, 0.3, 0.4] for chunk in children}
+
+    stats = indexer.index(
+        [doc],
+        chunks,
+        embedder=embedder,
+        source=_source(),
+        build_id="20260101T000000Z",
+        reuse_vectors=reuse,
+    )
+
+    assert stats.reused_vectors == len(children)
+    assert stats.embedded_vectors == 0
+    assert embedder.texts == []
+
+
 def test_existing_alias_is_replaced(tmp_path: Path) -> None:
     doc, chunks = _make_doc(tmp_path)
     client = FakeQdrantClient()
