@@ -216,12 +216,91 @@ uv run --no-sync python scripts/evaluate.py --mode hybrid --rerank
 
 ---
 
+## 4.6 2026-11-17：生成 / 引用 / 拒答评估
+
+### 数据集
+
+`data/eval/generation_set.jsonl`，14 条：
+
+- 12 条可回答
+- 2 条无答案，强制无上下文，专门测试拒答路径
+
+字段：
+
+```json
+{
+  "question": "...",
+  "expected_urls": ["..."],
+  "expected_keywords": ["lifespan", "on_event"],
+  "should_refuse": false,
+  "force_no_context": false
+}
+```
+
+### 运行
+
+```powershell
+uv run --no-sync python scripts/evaluate_generation.py
+```
+
+### 结果
+
+```text
+cases: 14
+answerable: 12
+no_answer: 2
+passed: 13
+pass_rate: 0.929
+source_recall: 1.000
+citation_validity: 0.917
+citation_hit: 0.917
+keyword_coverage: 1.000
+refusal_accuracy: 1.000
+latency p50: 4815ms
+latency p95: 5483ms
+```
+
+### 唯一失败：g09
+
+```text
+query: OAuth2 密码流加 JWT 怎么在 FastAPI 里实现？
+expected: tutorial/security/oauth2-jwt/
+source_recall: true   # oauth2-jwt 在 sources 里
+citation_hit: false   # 模型只引用了 [1] simple-oauth2
+```
+
+回答内容本身包含 JWT/OAuth2，关键词覆盖 1.0，但引用指向了 `simple-oauth2`，不是 `oauth2-jwt`。
+
+这是**引用选择错误**，不是检索失败，也不是答案内容完全错误。
+
+已记录到 `docs/BAD_CASES.md`。
+
+### 口径说明
+
+- `source_recall`：期望 URL 是否出现在检索 sources。
+- `citation_validity`：答案里的 `[n]` 是否都在 sources 范围内。
+- `citation_hit`：被引用的 source 是否包含期望 URL。
+- `keyword_coverage`：期望关键词是否都出现在答案里。
+- `refusal_accuracy`：无答案题是否明确拒答。
+- 无答案题用 `force_no_context=true`，测的是拒答路径，不是“检索不到”的端到端行为。
+
+### 局限
+
+- 关键词是弱监督，不等于语义正确。
+- 没有 LLM-as-Judge / RAGAS faithfulness。
+- 没有人工逐条评分。
+- 只有 14 条，偏小。
+- 延迟包含完整 LLM 生成，p50 约 4.8 秒。
+
+---
+
 ## 5. 结论与局限
 
 ### 结论
 
 - 30 条中文问题、英文文档，dense baseline 的 Recall@5 = 1.0。
 - hybrid + lexical rerank 把 MRR 从 0.953 提到 0.967，Recall 不变。
+- 14 条生成评估 13 条通过；唯一失败是 g09 引用选错，不是检索没召回。
 - reference 默认过滤和 golden 标注修正是两处真实改进。
 - p50/p95 检索延迟在本地 8 并发测试中仍低于 500ms（见 `WORKLOG_2026-11-14.md`）。
 
@@ -237,8 +316,9 @@ uv run --no-sync python scripts/evaluate.py --mode hybrid --rerank
 
 1. 扩到 60–100 条，加入无答案/硬负例/代码符号/版本差异题
 2. 评估 `/chat`：引用准确率、拒答正确率、faithfulness（RAGAS 或人工）
-3. 把 lexical rerank 升级为 cross-encoder，并复测 s01/m02
-4. 把评估报告和 bad case 纳入 CI smoke
+3. 修 g09 的引用选择，并扩到 30+ 条生成题
+4. 把 lexical rerank 升级为 cross-encoder，并复测 s01/m02
+5. 把评估报告和 bad case 纳入 CI smoke
 
 ---
 

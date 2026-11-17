@@ -14,9 +14,16 @@
 | BC-02 | 已改善，未解决 | OAuth2 + JWT 被 `simple-oauth2` 抢到 rank 3（hybrid rerank 后 rank 2） | MRR |
 | BC-03 | 已改善，未解决 | OAuth2PasswordBearer + JWT 多跳题 rank 4（hybrid rerank 后 rank 2） | MRR / 多跳 |
 | BC-04 | 已修复（标注） | 204 问题只标注 tutorial，advanced 命中被算错 | 评估口径 |
+| BC-05 | TODO | g09 答案内容正确，但只引用 `[1] simple-oauth2`，没引用 `oauth2-jwt` | 引用准确率 |
+| BC-06 | 已修复（策略） | rerank 曾把版本题 v01 从 rank 1 挤到 rank 6 | Recall@5 |
+| BC-07 | 已放弃（策略） | hybrid 不加 dense-first guard 时 MRR 低于 dense | 检索质量 |
 
-当前整体基线：30 条、Recall@5 = 1.0、Recall@1 = 0.933、MRR = 0.953。  
-所以这些不是“完全没召回”，而是**排序不够靠前**或**标注问题**。
+当前整体基线：
+
+- 检索：30 条，Recall@5 = 1.0，Recall@1 = 0.933，MRR = 0.967
+- 生成：14 条，13 pass，citation_validity = 0.917，refusal_accuracy = 1.0
+
+这些不是“完全没召回”，而是**排序、引用选择或标注问题**。
 
 ---
 
@@ -176,6 +183,113 @@ rank: 2
 
 - 评估指标变化必须区分“检索变好”和“标注变准”；
 - 一个 query 有多个正确 URL 时，golden set 要允许列表，不能只写一个。
+
+---
+
+## BC-05：答案正确但引用选错
+
+### 现象
+
+```text
+query: OAuth2 密码流加 JWT 怎么在 FastAPI 里实现？
+expected: tutorial/security/oauth2-jwt/
+sources: 8 条，包含 oauth2-jwt/
+answer: 内容包含 JWT / OAuth2 / OAuth2PasswordBearer
+answer citation: [1]
+source[1]: tutorial/security/simple-oauth2/
+citation_hit: false
+```
+
+### 根因
+
+- 模型只引用了第一条 source，没有引用真正支撑 JWT 的 `oauth2-jwt` 片段
+- 上下文里同时有 `simple-oauth2` 和 `oauth2-jwt`，两者主题相邻
+- 当前 prompt 只要求“标注来源编号”，没有强制“引用最直接支撑结论的片段”
+
+### 候选干预
+
+1. 生成后做 citation check：结论句和 source 的 token 重叠
+2. 把 sources 按与答案的相似度重排后再映射编号
+3. prompt 增加“引用最直接的 source，不要只引第一条”
+4. LLM-as-Judge 检查引用是否支撑结论
+
+### 状态
+
+TODO。已加入生成评估 `g09`。
+
+---
+
+## BC-06：rerank 把版本题挤出前 5
+
+### 现象
+
+```text
+query: FastAPI 0.162.0 对布尔表单字段做了什么变更？
+expected: release-notes/
+dense: rank 1
+hybrid + lexical rerank（无 guard）: rank 6
+Recall@5: 1.000 -> 0.967
+```
+
+### 根因
+
+- lexical rerank 给 `request-forms` 的标题/URL token 加了分
+- `release-notes` 标题和 query 的 token 重叠弱
+- 版本题被普通表单文档挤掉
+
+### 干预
+
+- 固定 dense top-1，只重排尾部候选（dense-first guard）
+- 不把 lexical rerank 当作通用语义精排
+
+### 结果
+
+```text
+hybrid + rerank（有 guard）:
+Recall@1 0.933
+Recall@5 1.000
+MRR 0.967
+```
+
+### 教训
+
+启发式 rerank 会伤害“高置信 dense top-1”；需要 guard 或真正的 cross-encoder。
+
+---
+
+## BC-07：hybrid 无 guard 时 MRR 低于 dense
+
+### 现象
+
+```text
+dense:
+Recall@1 0.933
+MRR 0.953
+
+hybrid（无 rerank / 无 dense-first guard）:
+Recall@1 0.867
+MRR 0.933
+```
+
+### 根因
+
+- BM25 和 dense 的排名冲突
+- RRF 让 BM25 的 top-1 与 dense 的 top-1 同权
+- 中文 query 的英文词典扩展带来噪声
+
+### 干预
+
+- 加 dense-first guard
+- 纯中文 query 不注入 glossary
+- BM25 权重低于 dense（默认 2.0 : 0.5）
+
+### 结果
+
+hybrid + guard 的 MRR 回到 0.967。
+
+### 教训
+
+hybrid 不是“加了就更好”；必须用同一套 golden set 做前后对比，并保留回退策略。
 
 ---
 

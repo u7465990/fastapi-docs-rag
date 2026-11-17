@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/fastapi_docs_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense + BM25 hybrid retrieval、`/api/v1/search`、`/api/v1/chat`、`/api/v1/chat/stream` SSE、多轮会话、前端聊天页、Docker API、Nginx 静态托管、30 条 golden set 检索评估、lexical rerank、HTTP 限流/access token/embedding 额度、request_id/JSON 日志/`/metrics` 已实现；cross-encoder、生成质量评估与并发调优尚未实现。
+**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/fastapi_docs_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense + BM25 hybrid retrieval、`/api/v1/search`、`/api/v1/chat`、`/api/v1/chat/stream` SSE、多轮会话、前端聊天页、Docker API、Nginx 静态托管、30 条 golden set 检索评估、14 条生成/引用/拒答评估、lexical rerank、HTTP 限流/access token/embedding 额度、request_id/JSON 日志/`/metrics` 已实现；cross-encoder、版本增量索引与并发调优尚未实现。
 
 FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库；当前 C 工作区是**文件快照，不含 `.git`**，实现增量索引前需按 README 重建 sparse checkout）：
 
@@ -74,6 +74,7 @@ uv run --no-sync python scripts/update_index.py     # 定时增量更新（项�
 uv run --no-sync python scripts/diff_report.py      # 变更 / 陈旧度报告
 uv run --no-sync python scripts/rebuild_index.py
 uv run --no-sync python scripts/evaluate.py
+uv run --no-sync python scripts/evaluate_generation.py   # 生成/引用/拒答评估
 
 # 静态检查与测试
 uv run --no-sync ruff check .

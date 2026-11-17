@@ -180,6 +180,7 @@ uv run --no-sync python scripts/check_chunker.py  # 切分统计（token 分布 
 uv run --no-sync python scripts/load_search.py    # 8 路并发检索延迟
 uv run --no-sync python scripts/evaluate.py       # 30 条 golden set 的 dense 基线
 uv run --no-sync python scripts/evaluate.py --mode hybrid --rerank  # hybrid + lexical rerank
+uv run --no-sync python scripts/evaluate_generation.py  # 生成/引用/拒答评估
 ```
 
 `make install` / `make test` / `make lint` 是上面的薄封装；`make up` 会从空环境构建全部镜像（包括前端），不要求本机有 `apps/web/dist`。
