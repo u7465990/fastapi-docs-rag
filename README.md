@@ -1,10 +1,12 @@
 # FastAPI 技术文档 RAG
 
+[![CI](https://github.com/u7465990/fastapi-docs-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/u7465990/fastapi-docs-rag/actions/workflows/ci.yml)
+
 面向 FastAPI 官方技术文档的 RAG 问答系统：支持中文提问检索英文文档、回答可追溯到 chunk → section → URL，并在检索不到时明确拒答。
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense + BM25 hybrid retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估、lexical rerank 和 HTTP 限流/额度锁；下一步是 cross-encoder/生成质量评估与部署硬化。
+> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense + BM25 hybrid retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估、14 条生成/引用/拒答评估、lexical rerank、CI 和 HTTP 限流/额度锁；下一步是版本感知增量索引与部署硬化。
 
 ## 数据源
 
@@ -190,6 +192,16 @@ uv run --no-sync python scripts/evaluate_generation.py  # 生成/引用/拒答�
 - API 文档：http://localhost:8000/docs
 - 存活检查：http://localhost:8000/healthz
 - 就绪检查：http://localhost:8000/readyz（需要 Qdrant、Redis 和模型 Key）
+
+## CI
+
+`.github/workflows/ci.yml` 在 push 到 `main`、PR 和手动触发时运行：
+
+- Python：`uv sync`、`uv lock --check`、ruff、mypy、pytest
+- 前端：`npm ci`、`npm run build`
+- Docker：构建 API 和 Web 镜像
+
+CI 只读仓库，不推送镜像、不部署、不需要模型 Key；它保证“代码能通过检查、前端能构建、镜像能构建”。
 
 ## 文档
 
