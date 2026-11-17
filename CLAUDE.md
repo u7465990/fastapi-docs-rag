@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/fastapi_docs_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense retrieval、`/api/v1/search`、`/api/v1/chat`、`/api/v1/chat/stream` SSE、多轮会话、前端聊天页、Docker API、Nginx 静态托管、30 条 golden set 检索评估、HTTP 限流/access token/embedding 额度、request_id/JSON 日志/`/metrics` 已实现；生成质量评估与并发调优尚未实现。
+**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/fastapi_docs_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense + BM25 hybrid retrieval、`/api/v1/search`、`/api/v1/chat`、`/api/v1/chat/stream` SSE、多轮会话、前端聊天页、Docker API、Nginx 静态托管、30 条 golden set 检索评估、lexical rerank、HTTP 限流/access token/embedding 额度、request_id/JSON 日志/`/metrics` 已实现；cross-encoder、生成质量评估与并发调优尚未实现。
 
 FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库；当前 C 工作区是**文件快照，不含 `.git`**，实现增量索引前需按 README 重建 sparse checkout）：
 
@@ -168,6 +168,12 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 - 工作区在 `C:` 盘上，DSH 会话为完全访问权限；`uv sync`、`pytest`、`git commit` 等写盘/联网命令可直接执行。
 - **不要复用 Claude Code 的 `ANTHROPIC_*` 环境变量**作为应用 Key；使用独立项目 Key 写入 `.env`。
 - 本机 hosts 把 `github.com` 解析到 `127.0.0.1`；执行 git / gh 前需开启加速器。
+
+**混合检索（当前实现）**
+- `retrieval/bm25.py`：内存 BM25，索引 Qdrant child payload；中文纯 query 不注入英文词典，避免噪声。
+- `retrieval/hybrid.py`：dense top 20 + BM25 top 20，加权 RRF；默认 dense_weight=2.0、bm25_weight=0.5。
+- `retrieval/rerank.py`：轻量 lexical rerank（标题/section/URL token 重叠），不是 cross-encoder；固定 dense top-1，只重排尾部。
+- 默认 `RETRIEVAL_MODE=hybrid`、`RERANK_ENABLED=true`；30 条评估 MRR 0.953 -> 0.967，Recall@5 不变。
 
 ## 目标目录结构（概要）
 

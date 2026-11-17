@@ -16,7 +16,10 @@ from qdrant_client import QdrantClient  # noqa: E402
 
 from fastapi_docs_rag.config import get_settings  # noqa: E402
 from fastapi_docs_rag.indexing.embedder import make_embedder  # noqa: E402
+from fastapi_docs_rag.retrieval.bm25 import BM25Index  # noqa: E402
 from fastapi_docs_rag.retrieval.dense import DenseRetriever  # noqa: E402
+from fastapi_docs_rag.retrieval.hybrid import HybridRetriever  # noqa: E402
+from fastapi_docs_rag.retrieval.rerank import LexicalReranker  # noqa: E402
 
 DEFAULT_GOLDEN = Path("data/eval/golden_set.jsonl")
 
@@ -53,6 +56,8 @@ def main() -> None:
     parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN)
     parser.add_argument("--top-k", type=int, default=10)
     parser.add_argument("--collection", default=settings.qdrant_collection)
+    parser.add_argument("--mode", choices=("dense", "hybrid"), default="dense")
+    parser.add_argument("--rerank", action="store_true")
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
     if args.top_k <= 0:
@@ -61,7 +66,20 @@ def main() -> None:
     cases = load_cases(args.golden)
     embedder = make_embedder(settings)
     client = QdrantClient(url=settings.qdrant_url)
-    retriever = DenseRetriever(client, embedder, collection=args.collection)
+    dense = DenseRetriever(client, embedder, collection=args.collection)
+    if args.mode == "hybrid":
+        retriever = HybridRetriever(
+            dense,
+            BM25Index.from_qdrant(client, args.collection),
+            dense_top_k=settings.hybrid_dense_top_k,
+            bm25_top_k=settings.hybrid_bm25_top_k,
+            rrf_k=settings.hybrid_rrf_k,
+            dense_weight=settings.hybrid_dense_weight,
+            bm25_weight=settings.hybrid_bm25_weight,
+            reranker=LexicalReranker() if args.rerank else None,
+        )
+    else:
+        retriever = dense
     results = []
     latencies: list[float] = []
     category_ranks: dict[str, list[int | None]] = defaultdict(list)
@@ -135,6 +153,8 @@ def main() -> None:
     report = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "collection": args.collection,
+        "mode": args.mode,
+        "rerank": args.rerank,
         "top_k": args.top_k,
         "cases": total,
         "metrics": {

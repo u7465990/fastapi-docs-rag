@@ -1,7 +1,7 @@
-# 检索评估基线（2026-11-15）
+# 检索评估基线（2026-11-15，2026-11-17 更新 hybrid）
 
-> 范围：dense retrieval only，`/api/v1/search` 背后的检索链路。
-> 不包含：LLM 生成质量、引用准确率、拒答质量、hybrid/rerank。
+> 范围：dense baseline + dense/BM25 hybrid + lexical rerank。
+> 不包含：LLM 生成质量、引用准确率、拒答质量、cross-encoder rerank。
 > 数据：`data/eval/golden_set.jsonl`，30 条中文问题。
 > 索引：`fastapi_docs_current`，155 篇文档 / 1363 个 child 向量。
 > Embedding：DashScope `text-embedding-v4`，1024 维。
@@ -165,11 +165,63 @@ MRR: 0.953
 
 ---
 
+## 4.5 2026-11-17：hybrid + lexical rerank
+
+### 实现
+
+- `BM25Index`：从 Qdrant payload 读取 1363 个 child，在内存建 BM25。
+- `HybridRetriever`：dense top 20 + BM25 top 20，用加权 RRF 融合。
+- `LexicalReranker`：标题、section、URL token 重叠 + 短语命中；不是 cross-encoder。
+- 默认：`RETRIEVAL_MODE=hybrid`、`RERANK_ENABLED=true`。
+- 中文纯 query 不注入 glossary，BM25 返回空，自动退化为 dense；混合/英文 API 词才走 BM25。
+- 为避免标题词把正确的 dense top-1 挤掉，rerank 固定 dense top-1，只重排尾部候选（dense-first guard）。
+
+### 结果
+
+```text
+mode=hybrid, rerank=true
+cases: 30
+Recall@1: 0.933
+Recall@5: 1.000
+Recall@10: 1.000
+MRR: 0.967
+latency_ms: p50=184 p95=332 max=432
+```
+
+对比：
+
+| 版本 | Recall@1 | Recall@5 | MRR |
+|---|---:|---:|---:|
+| dense baseline | 0.933 | 1.000 | 0.953 |
+| hybrid + rerank | 0.933 | 1.000 | **0.967** |
+
+- s01 / m02 从 rank 3/4 提升到 rank 2；top-1 仍是 `simple-oauth2`。
+- Recall 没有下降，MRR 有小幅提升。
+- 这是 **lexical rerank**，不是 cross-encoder；不能宣称“语义精排”。
+
+### 运行
+
+```powershell
+uv run --no-sync python scripts/evaluate.py --mode dense
+uv run --no-sync python scripts/evaluate.py --mode hybrid
+uv run --no-sync python scripts/evaluate.py --mode hybrid --rerank
+```
+
+### 局限
+
+- BM25 依赖英文 token；纯中文 query 实际只走 dense。
+- 词典扩展只覆盖少量 FastAPI 术语。
+- dense-first guard 是为了保护当前 30 条上的 top-1，不代表通用最优。
+- 没有做参数搜索，也没有交叉验证；不能把 0.967 当作泛化结论。
+
+---
+
 ## 5. 结论与局限
 
 ### 结论
 
 - 30 条中文问题、英文文档，dense baseline 的 Recall@5 = 1.0。
+- hybrid + lexical rerank 把 MRR 从 0.953 提到 0.967，Recall 不变。
 - reference 默认过滤和 golden 标注修正是两处真实改进。
 - p50/p95 检索延迟在本地 8 并发测试中仍低于 500ms（见 `WORKLOG_2026-11-14.md`）。
 
@@ -185,7 +237,7 @@ MRR: 0.953
 
 1. 扩到 60–100 条，加入无答案/硬负例/代码符号/版本差异题
 2. 评估 `/chat`：引用准确率、拒答正确率、faithfulness（RAGAS 或人工）
-3. 对 s01/m02 做 rerank/hybrid 实验，记录前后指标
+3. 把 lexical rerank 升级为 cross-encoder，并复测 s01/m02
 4. 把评估报告和 bad case 纳入 CI smoke
 
 ---

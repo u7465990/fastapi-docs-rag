@@ -29,6 +29,7 @@ class SearchHit:
     content_type: str
     code_language: str | None
     score: float
+    doc_type: str = "unknown"
 
 
 def build_filter(
@@ -65,6 +66,28 @@ def build_filter(
     if not must and not must_not:
         return None
     return Filter(must=must or None, must_not=must_not or None)
+
+
+def hit_from_point(point: Any) -> SearchHit:
+    payload = point.payload or {}
+    return SearchHit(
+        chunk_id=str(payload.get("chunk_id", "")),
+        doc_id=str(payload.get("doc_id", "")),
+        title=str(payload.get("title", "")),
+        text=str(payload.get("text", "")),
+        parent_text=str(payload.get("parent_text", "")),
+        url=str(payload.get("url", "")),
+        section_path=list(payload.get("section_path") or []),
+        anchor=payload.get("anchor"),
+        docs_version=str(payload.get("docs_version", "unknown")),
+        source_ref=str(payload.get("source_ref", "unknown")),
+        is_deprecated=bool(payload.get("is_deprecated", False)),
+        deprecation_hint=bool(payload.get("deprecation_hint", False)),
+        content_type=str(payload.get("content_type", "prose")),
+        code_language=payload.get("code_language"),
+        score=float(getattr(point, "score", 0.0) or 0.0),
+        doc_type=str(payload.get("doc_type", "unknown")),
+    )
 
 
 class DenseRetriever:
@@ -114,21 +137,4 @@ class DenseRetriever:
 
     @staticmethod
     def _hit(point: Any) -> SearchHit:
-        payload = point.payload or {}
-        return SearchHit(
-            chunk_id=str(payload.get("chunk_id", "")),
-            doc_id=str(payload.get("doc_id", "")),
-            title=str(payload.get("title", "")),
-            text=str(payload.get("text", "")),
-            parent_text=str(payload.get("parent_text", "")),
-            url=str(payload.get("url", "")),
-            section_path=list(payload.get("section_path") or []),
-            anchor=payload.get("anchor"),
-            docs_version=str(payload.get("docs_version", "unknown")),
-            source_ref=str(payload.get("source_ref", "unknown")),
-            is_deprecated=bool(payload.get("is_deprecated", False)),
-            deprecation_hint=bool(payload.get("deprecation_hint", False)),
-            content_type=str(payload.get("content_type", "prose")),
-            code_language=payload.get("code_language"),
-            score=float(point.score),
-        )
+        return hit_from_point(point)

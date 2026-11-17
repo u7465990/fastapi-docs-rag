@@ -43,7 +43,10 @@ from fastapi_docs_rag.observability.metrics import (
     reset_request_id,
     set_request_id,
 )
+from fastapi_docs_rag.retrieval.bm25 import BM25Index
 from fastapi_docs_rag.retrieval.dense import DenseRetriever, SearchHit
+from fastapi_docs_rag.retrieval.hybrid import HybridRetriever
+from fastapi_docs_rag.retrieval.rerank import LexicalReranker
 from fastapi_docs_rag.security import (
     RateLimiter,
     RateLimitExceeded,
@@ -244,14 +247,27 @@ def _sources_for_hits(hits: list[SearchHit]) -> list[ChatSource]:
 
 
 @lru_cache(maxsize=1)
-def _get_retriever() -> DenseRetriever:
+def _get_retriever() -> DenseRetriever | HybridRetriever:
     settings = get_settings()
     embedder = make_embedder(settings)
     client = QdrantClient(url=settings.qdrant_url)
-    return DenseRetriever(
+    dense = DenseRetriever(
         client,
         embedder,
         collection=settings.qdrant_collection,
+    )
+    if settings.retrieval_mode.lower() != "hybrid":
+        return dense
+    bm25 = BM25Index.from_qdrant(client, settings.qdrant_collection)
+    return HybridRetriever(
+        dense,
+        bm25,
+        dense_top_k=settings.hybrid_dense_top_k,
+        bm25_top_k=settings.hybrid_bm25_top_k,
+        rrf_k=settings.hybrid_rrf_k,
+        dense_weight=settings.hybrid_dense_weight,
+        bm25_weight=settings.hybrid_bm25_weight,
+        reranker=LexicalReranker() if settings.rerank_enabled else None,
     )
 
 

@@ -84,8 +84,15 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # Retrieval
+    retrieval_mode: str = "hybrid"
     retrieval_dense_top_k: int = 40
     retrieval_sparse_top_k: int = 40
+    hybrid_dense_top_k: int = 20
+    hybrid_bm25_top_k: int = 20
+    hybrid_rrf_k: int = 60
+    hybrid_dense_weight: float = 2.0
+    hybrid_bm25_weight: float = 0.5
+    rerank_enabled: bool = True
     rerank_top_k: int = 20
     final_top_k: int = 8
     max_context_tokens: int = 8000

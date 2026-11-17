@@ -11,8 +11,8 @@
 | id | 状态 | 现象 | 影响 |
 |---|---|---|---|
 | BC-01 | 已修复 | `TestClient` 问题被 `reference/testclient` 抢到 top-1 | Recall@1 |
-| BC-02 | TODO | OAuth2 + JWT 被 `simple-oauth2` 抢到 rank 3 | MRR |
-| BC-03 | TODO | OAuth2PasswordBearer + JWT 多跳题 rank 4 | MRR / 多跳 |
+| BC-02 | 已改善，未解决 | OAuth2 + JWT 被 `simple-oauth2` 抢到 rank 3（hybrid rerank 后 rank 2） | MRR |
+| BC-03 | 已改善，未解决 | OAuth2PasswordBearer + JWT 多跳题 rank 4（hybrid rerank 后 rank 2） | MRR / 多跳 |
 | BC-04 | 已修复（标注） | 204 问题只标注 tutorial，advanced 命中被算错 | 评估口径 |
 
 当前整体基线：30 条、Recall@5 = 1.0、Recall@1 = 0.933、MRR = 0.953。  
@@ -69,6 +69,16 @@ observed top-1: https://fastapi.tiangolo.com/tutorial/security/simple-oauth2/
 rank: 3
 ```
 
+### 当前状态
+
+hybrid + lexical rerank 后：
+
+```text
+rank: 2
+top-1: simple-oauth2（仍未解决）
+MRR: 0.953 -> 0.967
+```
+
 ### 根因
 
 - `simple-oauth2` 和 `oauth2-jwt` 是相邻教程，术语高度重叠
@@ -97,6 +107,15 @@ query: OAuth2PasswordBearer 怎么配合 JWT 做登录认证？
 expected: tutorial/security/first-steps/ 或 tutorial/security/oauth2-jwt/
 observed top-1: tutorial/security/simple-oauth2/
 rank: 4
+```
+
+### 当前状态
+
+hybrid + lexical rerank 后：
+
+```text
+rank: 2
+top-1: simple-oauth2（仍未解决）
 ```
 
 ### 根因

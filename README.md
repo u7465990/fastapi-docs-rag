@@ -4,7 +4,7 @@
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估和 HTTP 限流/额度锁；下一步是生成质量评估与部署硬化。
+> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense + BM25 hybrid retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估、lexical rerank 和 HTTP 限流/额度锁；下一步是 cross-encoder/生成质量评估与部署硬化。
 
 ## 数据源
 
@@ -178,7 +178,8 @@ uv run --no-sync mypy src
 uv run --no-sync python scripts/check_parser.py   # 解析器冒烟统计
 uv run --no-sync python scripts/check_chunker.py  # 切分统计（token 分布 / 代码块 / 废弃）
 uv run --no-sync python scripts/load_search.py    # 8 路并发检索延迟
-uv run --no-sync python scripts/evaluate.py       # 30 条 golden set 的检索基线
+uv run --no-sync python scripts/evaluate.py       # 30 条 golden set 的 dense 基线
+uv run --no-sync python scripts/evaluate.py --mode hybrid --rerank  # hybrid + lexical rerank
 ```
 
 `make install` / `make test` / `make lint` 是上面的薄封装；`make up` 会从空环境构建全部镜像（包括前端），不要求本机有 `apps/web/dist`。
