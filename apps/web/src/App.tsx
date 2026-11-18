@@ -27,6 +27,7 @@ type Message = {
   content: string;
   sources?: Source[];
   model?: string;
+  warnings?: string[];
 };
 
 const EXAMPLES = [
@@ -87,7 +88,7 @@ export default function App() {
     setMessages((previous) => [
       ...previous,
       { role: "user", content: text },
-      { role: "assistant", content: "", sources: [] },
+      { role: "assistant", content: "", sources: [], warnings: [] },
     ]);
     try {
       const headers: Record<string, string> = {
@@ -142,6 +143,14 @@ export default function App() {
               updateLastAssistant((message) => ({
                 ...message,
                 content: message.content + String(payload.text ?? ""),
+              }));
+            } else if (event === "warning") {
+              updateLastAssistant((message) => ({
+                ...message,
+                warnings: [
+                  ...(message.warnings ?? []),
+                  String(payload.message ?? "citation warning"),
+                ],
               }));
             } else if (event === "done") {
               updateLastAssistant((message) => ({
@@ -247,6 +256,11 @@ export default function App() {
                     ))}
                   </ol>
                 </section>
+              )}
+              {message.warnings && message.warnings.length > 0 && (
+                <div className="citation-warning">
+                  引用校验：{message.warnings.join("；")}
+                </div>
               )}
             </section>
           ),

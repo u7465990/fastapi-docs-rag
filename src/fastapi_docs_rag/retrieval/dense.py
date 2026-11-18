@@ -30,6 +30,7 @@ class SearchHit:
     code_language: str | None
     score: float
     doc_type: str = "unknown"
+    dense_score: float | None = None
 
 
 def build_filter(
@@ -70,6 +71,8 @@ def build_filter(
 
 def hit_from_point(point: Any) -> SearchHit:
     payload = point.payload or {}
+    raw_score = getattr(point, "score", None)
+    score = float(raw_score) if raw_score is not None else 0.0
     return SearchHit(
         chunk_id=str(payload.get("chunk_id", "")),
         doc_id=str(payload.get("doc_id", "")),
@@ -85,8 +88,9 @@ def hit_from_point(point: Any) -> SearchHit:
         deprecation_hint=bool(payload.get("deprecation_hint", False)),
         content_type=str(payload.get("content_type", "prose")),
         code_language=payload.get("code_language"),
-        score=float(getattr(point, "score", 0.0) or 0.0),
+        score=score,
         doc_type=str(payload.get("doc_type", "unknown")),
+        dense_score=score if raw_score is not None else None,
     )
 
 

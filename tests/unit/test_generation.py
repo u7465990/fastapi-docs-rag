@@ -1,6 +1,14 @@
 """Tests for grounded answer generation."""
 
-from fastapi_docs_rag.generation.chat import REFUSAL, build_context, generate_answer
+from fastapi_docs_rag.generation.chat import (
+    REFUSAL,
+    build_context,
+    check_citations,
+    generate_answer,
+    retrieval_confidence,
+    rewrite_query,
+    select_context_hits,
+)
 from fastapi_docs_rag.retrieval.dense import SearchHit
 
 
@@ -65,3 +73,39 @@ def test_no_hits_refuses_without_calling_llm() -> None:
 
     assert answer == REFUSAL
     assert client.messages == []
+
+
+def test_follow_up_rewrite_uses_previous_user_question() -> None:
+    history = [
+        {"role": "user", "content": "on_event 怎么迁移？"},
+        {"role": "assistant", "content": "用 lifespan。"},
+    ]
+
+    rewritten = rewrite_query("那它呢？", history)
+
+    assert "on_event 怎么迁移？" in rewritten
+    assert "那它呢？" in rewritten
+
+
+def test_context_selection_dedupes_urls_and_respects_budget() -> None:
+    hits = [_hit(1), _hit(2), _hit(3)]
+
+    selected = select_context_hits(hits, max_tokens=8000, max_per_url=2)
+
+    assert len(selected) == 2
+    assert selected[0].url == _hit().url
+
+
+def test_retrieval_confidence_uses_dense_score() -> None:
+    hit = _hit()
+    hit = SearchHit(**{**hit.__dict__, "dense_score": 0.72})
+
+    assert retrieval_confidence([hit]) == 0.72
+
+
+def test_citation_check_flags_invalid_index() -> None:
+    check = check_citations("根据文档 [1]，这里还有 [9]。", [_hit()])
+
+    assert check.invalid_indices == [9]
+    assert check.valid_citations == 1
+    assert check.warnings

@@ -21,7 +21,11 @@ from fastapi_docs_rag.config import Settings, get_settings
 from fastapi_docs_rag.generation.chat import (
     REFUSAL,
     build_messages,
+    check_citations,
     estimate_chat_tokens,
+    retrieval_confidence,
+    rewrite_query,
+    select_context_hits,
 )
 from fastapi_docs_rag.generation.llm import ChatClient, make_chat_client
 from fastapi_docs_rag.generation.quota import (
@@ -223,6 +227,7 @@ class ChatResponse(BaseModel):
     model: str
     sources: list[ChatSource]
     session_id: str | None = None
+    citation_warnings: list[str] = Field(default_factory=list)
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:
@@ -396,10 +401,11 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
     _guard_http(http_request, "chat")
     _reserve_embedding(payload.query)
     history = _load_history(payload.session_id)
+    retrieval_query = rewrite_query(payload.query, history)
     try:
         retriever = _get_retriever()
         hits: list[SearchHit] = retriever.search(
-            payload.query,
+            retrieval_query,
             limit=payload.limit,
             doc_type=payload.doc_type,
             docs_version=payload.docs_version,
@@ -416,6 +422,12 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
         ) from exc
 
     settings = get_settings()
+    hits = select_context_hits(
+        hits,
+        max_tokens=settings.max_context_tokens,
+    )
+    if retrieval_confidence(hits) < settings.retrieval_min_score:
+        hits = []
     if not hits:
         _save_turn(payload.session_id, payload.query, REFUSAL)
         return ChatResponse(
@@ -451,12 +463,14 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
         ) from exc
 
     _save_turn(payload.session_id, payload.query, answer)
+    citation_check = check_citations(answer, hits)
     return ChatResponse(
         query=payload.query,
         answer=answer,
         model=client.model,
         sources=_sources_for_hits(hits),
         session_id=payload.session_id,
+        citation_warnings=citation_check.warnings,
     )
 
 
@@ -466,10 +480,11 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
     _guard_http(http_request, "chat")
     _reserve_embedding(payload.query)
     history = _load_history(payload.session_id)
+    retrieval_query = rewrite_query(payload.query, history)
     try:
         retriever = _get_retriever()
         hits: list[SearchHit] = retriever.search(
-            payload.query,
+            retrieval_query,
             limit=payload.limit,
             doc_type=payload.doc_type,
             docs_version=payload.docs_version,
@@ -486,6 +501,12 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
         ) from exc
 
     settings = get_settings()
+    hits = select_context_hits(
+        hits,
+        max_tokens=settings.max_context_tokens,
+    )
+    if retrieval_confidence(hits) < settings.retrieval_min_score:
+        hits = []
     headers = {
         "Cache-Control": "no-cache",
         "X-Accel-Buffering": "no",
@@ -546,13 +567,21 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
         except Exception:  # noqa: BLE001 - errors must be explicit in SSE
             yield _sse("error", {"message": "generation stream failed"})
             return
-        _save_turn(payload.session_id, payload.query, "".join(parts))
+        answer = "".join(parts)
+        _save_turn(payload.session_id, payload.query, answer)
+        citation_check = check_citations(answer, hits)
+        for warning in citation_check.warnings:
+            yield _sse("warning", {"message": warning})
         # The OpenAI-compatible stream does not expose usage in all providers;
         # keep the event for the fixed SSE contract, with null counts.
         yield _sse("usage", {"input_tokens": None, "output_tokens": None})
         yield _sse(
             "done",
-            {"model": client.model, "session_id": payload.session_id},
+            {
+                "model": client.model,
+                "session_id": payload.session_id,
+                "citation_warnings": citation_check.warnings,
+            },
         )
 
     return StreamingResponse(

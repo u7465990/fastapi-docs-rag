@@ -275,3 +275,12 @@ textarea {
   background: #e0f2fe;
   color: #075985;
 }
+
+.citation-warning {
+  margin-top: 14px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 13px;
+}

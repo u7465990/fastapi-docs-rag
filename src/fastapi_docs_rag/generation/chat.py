@@ -2,12 +2,31 @@
 
 from __future__ import annotations
 
+import re
+from collections import Counter
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from fastapi_docs_rag.generation.llm import ChatClient
 from fastapi_docs_rag.retrieval.dense import SearchHit
 
 MAX_SOURCE_CHARS = 5000
+MAX_CONTEXT_TOKENS = 8000
+MAX_URLS = 2
+CITATION_RE = re.compile(r"\[(\d+)\]")
+WORD_RE = re.compile(r"[A-Za-z0-9_]{3,}")
+FOLLOWUP_MARKERS = (
+    "它",
+    "他",
+    "这个",
+    "那个",
+    "上述",
+    "该",
+    "其",
+    "这些",
+    "这种",
+    "那",
+)
 
 REFUSAL = "文档中没有找到足够信息来回答这个问题。"
 
@@ -23,6 +42,129 @@ SYSTEM_PROMPT = """你是 FastAPI 官方文档问答助手。必须遵守：
 9. 对话历史只用于理解指代和追问；事实仍必须来自本轮“文档上下文”。
    历史回答里的 [n] 编号属于历史轮次，不要和本轮编号混用。
 """
+
+
+def rewrite_query(
+    query: str,
+    history: Sequence[dict[str, str]] | None = None,
+) -> str:
+    """Resolve short follow-ups by prepending the previous user question.
+
+    This is deliberately deterministic: it costs no extra LLM call and does
+    not consume the chat quota. Unknown follow-ups still fall back to the
+    original query when there is no useful history.
+    """
+    if not history:
+        return query
+    previous_user = next(
+        (
+            message.get("content", "")
+            for message in reversed(history)
+            if message.get("role") == "user" and message.get("content")
+        ),
+        "",
+    )
+    if not previous_user:
+        return query
+    is_short = len(query.strip()) <= 14
+    has_marker = any(marker in query for marker in FOLLOWUP_MARKERS)
+    if not is_short and not has_marker:
+        return query
+    return f"{previous_user}\n{query}"
+
+
+def select_context_hits(
+    hits: Sequence[SearchHit],
+    *,
+    max_tokens: int = MAX_CONTEXT_TOKENS,
+    max_per_url: int = MAX_URLS,
+) -> list[SearchHit]:
+    """Deduplicate by URL and keep the prompt within a token budget."""
+    selected: list[SearchHit] = []
+    used_tokens = 0
+    url_counts: Counter[str] = Counter()
+    for hit in hits:
+        if url_counts[hit.url] >= max_per_url:
+            continue
+        text = (hit.parent_text or hit.text)[:MAX_SOURCE_CHARS]
+        estimated = max(1, len(text) // 4)
+        if selected and used_tokens + estimated > max_tokens:
+            break
+        selected.append(hit)
+        used_tokens += estimated
+        url_counts[hit.url] += 1
+    return selected
+
+
+def retrieval_confidence(hits: Sequence[SearchHit]) -> float:
+    """Use the strongest dense similarity when hybrid RRF scores are opaque."""
+    scores = [
+        hit.dense_score if hit.dense_score is not None else hit.score
+        for hit in hits
+    ]
+    return max(scores, default=0.0)
+
+
+@dataclass(frozen=True)
+class CitationCheck:
+    citations: int
+    valid_citations: int
+    invalid_indices: list[int]
+    unsupported_indices: list[int]
+    warnings: list[str]
+
+    @property
+    def ok(self) -> bool:
+        return not self.invalid_indices and not self.unsupported_indices
+
+
+def check_citations(
+    answer: str,
+    hits: Sequence[SearchHit],
+) -> CitationCheck:
+    """Check citation indices and a lightweight source-overlap signal."""
+    indices = [int(match) for match in CITATION_RE.findall(answer)]
+    invalid = [index for index in indices if not 1 <= index <= len(hits)]
+    unsupported: list[int] = []
+    for sentence in re.split(r"(?<=[。！？.!?])\s+", answer):
+        cited = [int(match) for match in CITATION_RE.findall(sentence)]
+        if not cited:
+            continue
+        question_words = {
+            word.lower()
+            for word in WORD_RE.findall(sentence)
+            if word.lower() not in {"the", "and", "for", "with", "that", "this"}
+        }
+        for index in cited:
+            if not 1 <= index <= len(hits):
+                continue
+            source_words = set(
+                WORD_RE.findall(
+                    " ".join(
+                        [
+                            hits[index - 1].title,
+                            " ".join(hits[index - 1].section_path),
+                        ]
+                    ).lower()
+                )
+            )
+            if len(question_words) >= 2 and len(question_words & source_words) < 1:
+                unsupported.append(index)
+
+    warnings: list[str] = []
+    if not indices:
+        warnings.append("answer has no citation")
+    if invalid:
+        warnings.append(f"invalid citation indices: {sorted(set(invalid))}")
+    if unsupported:
+        warnings.append(f"weak citation support: {sorted(set(unsupported))}")
+    return CitationCheck(
+        citations=len(indices),
+        valid_citations=len(indices) - len(invalid),
+        invalid_indices=sorted(set(invalid)),
+        unsupported_indices=sorted(set(unsupported)),
+        warnings=warnings,
+    )
 
 
 def build_context(hits: Sequence[SearchHit]) -> str:

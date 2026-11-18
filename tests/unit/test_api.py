@@ -71,6 +71,9 @@ class CapturingChatClient(FakeChatClient):
 
 
 class FakeRetriever:
+    def __init__(self, score: float = 0.9) -> None:
+        self.score = score
+
     def search(self, query: str, **kwargs):
         assert query
         return [
@@ -89,7 +92,8 @@ class FakeRetriever:
                 deprecation_hint=False,
                 content_type="prose",
                 code_language=None,
-                score=0.9,
+                score=self.score,
+                dense_score=self.score,
             )
         ]
 
@@ -185,6 +189,24 @@ def test_chat_stream_endpoint_emits_sse_events(monkeypatch) -> None:
     assert "event: done" in body
     assert "答案" in body
     assert "/tutorial/dependencies/" in body
+
+
+def test_chat_refuses_when_top_retrieval_score_is_too_low(monkeypatch) -> None:
+    monkeypatch.setattr(api, "_get_retriever", lambda: FakeRetriever(score=0.01))
+    monkeypatch.setattr(
+        api,
+        "_get_chat_client",
+        lambda: (_ for _ in ()).throw(AssertionError("LLM must not be called")),
+    )
+    monkeypatch.setattr(api, "_get_quota_guard", lambda: FakeQuota())
+
+    response = client.post(
+        "/api/v1/chat",
+        json={"query": "FastAPI 怎么做 3D 建模？"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["answer"] == REFUSAL
 
 
 def test_chat_endpoint_uses_and_updates_session_history(monkeypatch) -> None:

@@ -88,6 +88,7 @@ class Settings(BaseSettings):
 
     # Retrieval
     retrieval_mode: str = "hybrid"
+    retrieval_min_score: float = 0.35
     retrieval_dense_top_k: int = 40
     retrieval_sparse_top_k: int = 40
     hybrid_dense_top_k: int = 20
