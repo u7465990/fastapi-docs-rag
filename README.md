@@ -157,6 +157,7 @@ sources -> token* -> usage -> done
 
 ```text
 检索 20 并发 p95: 496ms -> 533ms（无明显提升，瓶颈在 embedding/Qdrant）
+检索 100 并发: 100 x 200, p95 3.70s, 25.1 rps
 Chat 5 并发 p95: 6.34s -> 5.42s
 SSE 5 并发 TTFT p95: 1.10s
 Chat 10 并发: 1.16 rps, 0 errors
@@ -164,7 +165,7 @@ Chat 10 并发: 1.16 rps, 0 errors
 
 完整数据和限制见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)。
 
-不要声称“支持 100 并发”；目前只验证到 10 并发 chat、20 并发检索。
+不要声称“支持 100 并发 chat”；目前只验证到 10 并发 chat、100 并发检索。
 
 ### Cross-encoder rerank
 
