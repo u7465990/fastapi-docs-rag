@@ -20,6 +20,9 @@ type Source = {
   is_deprecated: boolean;
   deprecation_hint: boolean;
   snippet: string;
+  score?: number | null;
+  dense_score?: number | null;
+  rerank_score?: number | null;
 };
 
 type Message = {
@@ -28,6 +31,8 @@ type Message = {
   sources?: Source[];
   model?: string;
   warnings?: string[];
+  timings?: Record<string, number>;
+  retrievalQuery?: string;
 };
 
 const EXAMPLES = [
@@ -156,6 +161,10 @@ export default function App() {
               updateLastAssistant((message) => ({
                 ...message,
                 model: String(payload.model ?? ""),
+                timings: (payload.timings as Record<string, number>) ?? {},
+                retrievalQuery: payload.retrieval_query
+                  ? String(payload.retrieval_query)
+                  : undefined,
               }));
             } else if (event === "error") {
               throw new Error(String(payload.message ?? "generation stream failed"));
@@ -262,6 +271,32 @@ export default function App() {
                   引用校验：{message.warnings.join("；")}
                 </div>
               )}
+              <details className="debug">
+                <summary>调试信息</summary>
+                {message.retrievalQuery && (
+                  <p className="debug-query">
+                    检索 query：{message.retrievalQuery}
+                  </p>
+                )}
+                <div className="debug-timings">
+                  {Object.entries(message.timings ?? {}).map(([key, value]) => (
+                    <span key={key}>
+                      {key}: {Number(value).toFixed(2)}ms
+                    </span>
+                  ))}
+                </div>
+                {message.sources && message.sources.length > 0 && (
+                  <ol className="debug-sources">
+                    {message.sources.map((source) => (
+                      <li key={`debug-${source.index}-${source.url}`}>
+                        [{source.index}] RRF {source.score?.toFixed(4) ?? "—"} ·
+                        dense {source.dense_score?.toFixed(4) ?? "—"} · rerank{" "}
+                        {source.rerank_score?.toFixed(4) ?? "—"}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </details>
             </section>
           ),
         )}

@@ -8,6 +8,45 @@
 
 > 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense + BM25 hybrid retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估、24 条生成/引用/拒答评估（21 pass）、cross-encoder 可选 rerank、精确答案缓存、版本意图路由、manifest 增量索引、查询改写、低分拒答、上下文预算/去重、引用重试、async API/SSE、并发压测报告、CI 和 HTTP 限流/额度锁；下一步是 RAGAS 与历史 collection 检索。
 
+## 架构
+
+```mermaid
+flowchart TB
+    A[FastAPI Markdown docs] --> B[parser + include/admonition]
+    B --> C[parent/child chunker]
+    C --> D[embedding]
+    C --> E[BM25 index]
+    D --> F[(Qdrant dense)]
+    F --> G[dense top-k]
+    E --> H[BM25 top-k]
+    G --> I[weighted RRF]
+    H --> I
+    I --> J{high-confidence dense?}
+    J -->|yes| K[skip rerank]
+    J -->|no| L[cross-encoder / lexical]
+    K --> M[context budget + URL dedupe]
+    L --> M
+    M --> N[LLM qwen]
+    N --> O[citation check + one retry]
+    O --> P[SSE / HTTP response]
+    Q[(Redis)] --> R[answer cache]
+    Q --> S[retrieval cache]
+    Q --> T[quota + session + rate limit]
+    R --> P
+    S --> I
+```
+
+关键链路：
+
+- 离线：Markdown → include 解析 → 父子切分 → embedding → Qdrant；变更用 `content_sha256` 复用向量。
+- 在线：dense + BM25 → RRF → 高置信度跳过 rerank 或 cross-encoder → 上下文预算 → LLM → citation 校验。
+- 缓存：答案缓存和检索结果缓存都带 `source_ref + build_id`，索引切换后失效。
+- 可观测：响应/SSE `done` 带 `timings`；前端“调试信息”展示改写 query、阶段耗时和各来源分数。
+
+![调试面板](docs/assets/debug-panel.png)
+
+演示材料：[3 分钟 Demo 脚本](docs/DEMO_SCRIPT.md)。
+
 ## 数据源
 
 - 仓库：[`fastapi/fastapi`](https://github.com/fastapi/fastapi)（MIT）
@@ -161,11 +200,12 @@ sources -> token* -> usage -> done
 Chat 5 并发 p95: 6.34s -> 5.42s
 SSE 5 并发 TTFT p95: 1.10s
 Chat 10 并发: 1.16 rps, 0 errors
+Chat 20 并发: 20 x 200, p95 29.1s（不可用，仅说明系统不崩）
 ```
 
 完整数据和限制见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)。
 
-不要声称“支持 100 并发 chat”；目前只验证到 10 并发 chat、100 并发检索。
+不要声称“支持 20 并发低延迟 chat”；目前只验证到 10 并发可用、20 并发不报错但很慢、100 并发检索。
 
 ### Cross-encoder rerank
 

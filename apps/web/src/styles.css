@@ -284,3 +284,39 @@ textarea {
   color: #9a3412;
   font-size: 13px;
 }
+
+.debug {
+  margin-top: 14px;
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 10px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.debug summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.debug-query {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+
+.debug-timings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 8px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.debug-sources {
+  margin: 8px 0 0 18px;
+  padding: 0;
+}
+
+.debug-sources li {
+  margin: 3px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}

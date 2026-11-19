@@ -210,6 +210,8 @@ class SearchResult(BaseModel):
     content_type: str
     code_language: str | None
     score: float
+    dense_score: float | None = None
+    rerank_score: float | None = None
 
 
 class SearchResponse(BaseModel):
@@ -240,6 +242,9 @@ class ChatSource(BaseModel):
     is_deprecated: bool
     deprecation_hint: bool
     snippet: str
+    score: float | None = None
+    dense_score: float | None = None
+    rerank_score: float | None = None
 
 
 class ChatResponse(BaseModel):
@@ -250,6 +255,7 @@ class ChatResponse(BaseModel):
     session_id: str | None = None
     citation_warnings: list[str] = Field(default_factory=list)
     timings: dict[str, float] = Field(default_factory=dict)
+    retrieval_query: str | None = None
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:
@@ -268,6 +274,9 @@ def _sources_for_hits(hits: list[SearchHit]) -> list[ChatSource]:
             is_deprecated=hit.is_deprecated,
             deprecation_hint=hit.deprecation_hint,
             snippet=(hit.parent_text or hit.text)[:600],
+            score=hit.score,
+            dense_score=hit.dense_score,
+            rerank_score=hit.rerank_score,
         )
         for index, hit in enumerate(hits, start=1)
     ]
@@ -587,6 +596,7 @@ async def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
     started = time.perf_counter()
     await anyio.to_thread.run_sync(_guard_http, http_request, "chat")
     history = await anyio.to_thread.run_sync(_load_history, payload.session_id)
+    retrieval_query = rewrite_query(payload.query, history)
     cached = await anyio.to_thread.run_sync(_cache_lookup, payload, history)
     if cached is not None:
         return _cached_response(payload, cached[1])
@@ -619,6 +629,7 @@ async def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
             sources=[],
             session_id=payload.session_id,
             timings={**timings, "total_ms": (time.perf_counter() - started) * 1000},
+            retrieval_query=retrieval_query,
         )
 
     messages = build_messages(payload.query, hits, history)
@@ -690,6 +701,7 @@ async def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
         session_id=payload.session_id,
         citation_warnings=citation_check.warnings,
         timings={**timings, "total_ms": (time.perf_counter() - started) * 1000},
+        retrieval_query=retrieval_query,
     )
 
 
@@ -702,6 +714,7 @@ async def chat_stream(
     started = time.perf_counter()
     await anyio.to_thread.run_sync(_guard_http, http_request, "chat")
     history = await anyio.to_thread.run_sync(_load_history, payload.session_id)
+    retrieval_query = rewrite_query(payload.query, history)
     cached = await anyio.to_thread.run_sync(_cache_lookup, payload, history)
     if cached is not None:
         cached_data = cached[1]
@@ -728,6 +741,7 @@ async def chat_stream(
                     "citation_warnings": cached_warnings,
                     "cache_hit": True,
                     "timings": {"answer_cache_hit": 1.0},
+                    "retrieval_query": retrieval_query,
                 },
             )
 
@@ -782,6 +796,7 @@ async def chat_stream(
                         **timings,
                         "total_ms": (time.perf_counter() - started) * 1000,
                     },
+                    "retrieval_query": retrieval_query,
                 },
             )
 
@@ -864,6 +879,7 @@ async def chat_stream(
                     **timings,
                     "total_ms": (time.perf_counter() - started) * 1000,
                 },
+                "retrieval_query": retrieval_query,
             },
         )
 
