@@ -162,7 +162,10 @@ def check_citations(
         warnings.append("answer has no citation")
     if invalid:
         warnings.append(f"invalid citation indices: {sorted(set(invalid))}")
-    if unsupported:
+    # A single weak lexical-overlap result is too noisy to show to users; keep
+    # the signal in CitationCheck for evaluation, but warn only on systemic
+    # weakness (two or more weak citations).
+    if len(set(unsupported)) >= 2:
         warnings.append(f"weak citation support: {sorted(set(unsupported))}")
     return CitationCheck(
         citations=len(indices),
