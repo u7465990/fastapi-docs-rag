@@ -18,6 +18,7 @@ from fastapi_docs_rag.indexing.indexer import QdrantIndexer  # noqa: E402
 from fastapi_docs_rag.indexing.manifest import (  # noqa: E402
     IndexManifest,
     build_manifest,
+    save_manifest_history,
 )
 from fastapi_docs_rag.ingestion.parser import iter_documents  # noqa: E402
 from fastapi_docs_rag.ingestion.source import detect_source_info  # noqa: E402
@@ -118,8 +119,10 @@ def main() -> None:
         previous=IndexManifest.load(args.manifest),
     )
     manifest.save(args.manifest)
+    history_path = save_manifest_history(manifest, args.manifest)
 
     print(f"build_collection: {stats.build_collection}")
+    print(f"manifest_history: {history_path}")
     print(f"alias:            {stats.alias}")
     print(f"vectors:          {stats.vectors}")
     print(f"reused_vectors:   {stats.reused_vectors}")

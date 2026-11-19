@@ -15,6 +15,7 @@ from fastapi_docs_rag.indexing.manifest import (  # noqa: E402
     IndexManifest,
     diff_manifest,
 )
+from fastapi_docs_rag.ingestion.change_detector import git_changed_docs  # noqa: E402
 from fastapi_docs_rag.ingestion.parser import iter_documents  # noqa: E402
 from fastapi_docs_rag.ingestion.source import detect_source_info  # noqa: E402
 
@@ -48,6 +49,11 @@ def main() -> None:
         or (previous.source_ref if previous else ""),
     )
     changes = diff_manifest(previous, documents, chunks)
+    git_files = git_changed_docs(
+        repo_root,
+        previous.source_ref if previous else None,
+        current.source_ref,
+    )
 
     stale_hours = None
     if previous is not None:
@@ -67,6 +73,7 @@ def main() -> None:
         "stale_hours:      "
         f"{stale_hours:.1f}" if stale_hours is not None else "stale_hours:      unknown"
     )
+    print(f"git_changed:     {len(git_files) if git_files is not None else 'unavailable'}")
     for key in (
         "added_docs",
         "changed_docs",

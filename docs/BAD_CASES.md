@@ -17,11 +17,15 @@
 | BC-05 | TODO | g09 答案内容正确，但只引用 `[1] simple-oauth2`，没引用 `oauth2-jwt` | 引用准确率 |
 | BC-06 | 已修复（策略） | rerank 曾把版本题 v01 从 rank 1 挤到 rank 6 | Recall@5 |
 | BC-07 | 已放弃（策略） | hybrid 不加 dense-first guard 时 MRR 低于 dense | 检索质量 |
+| BC-08 | TODO | g04 BackgroundTasks 答案正确但没有引用 | 引用完整率 |
+| BC-09 | TODO | g08 HTTPS/TLS 答案正确但没有引用 | 引用完整率 |
+| BC-10 | TODO | g15 0.100.0 版本题没召回 release-notes | 版本检索 |
+| BC-11 | TODO | g16 regex→pattern 答案正确但没有引用 | 引用完整率 |
 
 当前整体基线：
 
 - 检索：30 条，Recall@5 = 1.0，Recall@1 = 0.933，MRR = 0.967
-- 生成：14 条，13 pass，citation_validity = 0.917，refusal_accuracy = 1.0
+- 生成：24 条，20 pass，citation_validity = 0.9，refusal_accuracy = 1.0
 
 这些不是“完全没召回”，而是**排序、引用选择或标注问题**。
 
@@ -290,6 +294,101 @@ hybrid + guard 的 MRR 回到 0.967。
 ### 教训
 
 hybrid 不是“加了就更好”；必须用同一套 golden set 做前后对比，并保留回退策略。
+
+---
+
+## BC-08：BackgroundTasks 答案正确但无引用
+
+```text
+query: BackgroundTasks 怎么用？
+source_recall: true
+keyword_coverage: 1.0
+citation_hit: false
+```
+
+### 根因
+
+- 模型输出了完整步骤和代码，但关键结论没有 `[n]`
+- prompt 已要求引用，但模型仍可能漏掉
+- 当前 `check_citations` 能发现“无引用”，但没有强制重试
+
+### 干预候选
+
+1. 生成后检查 `citation_check.citations == 0`，带纠正 prompt 重试一次
+2. 对无引用的答案在 UI 明确标记“未通过引用校验”
+3. 生成结构化答案：结论 + citations 分开输出
+
+### 状态
+
+TODO。已记录 g04。
+
+---
+
+## BC-09：HTTPS/TLS 答案正确但无引用
+
+```text
+query: FastAPI 怎么配置 HTTPS 和 TLS 证书？
+source_recall: true
+keyword_coverage: 1.0
+citation_hit: false
+```
+
+### 根因
+
+- 答案解释了 TLS termination proxy，内容正确
+- 但没有给出 `[n]`
+- 说明引用生成仍不稳定
+
+### 干预候选
+
+同 BC-08。
+
+---
+
+## BC-10：0.100.0 版本题没召回 release-notes
+
+```text
+query: FastAPI 0.100.0 对 on_startup 和 on_shutdown 做了什么变更？
+expected: release-notes/
+source_recall: false
+```
+
+### 根因
+
+- 版本问题需要优先路由到 release notes
+- 当前只做普通 hybrid 检索，没有版本意图识别
+- 模型转而回答 0.162.0 的 deprecated 信息，答案偏离问题
+
+### 干预候选
+
+1. 识别版本号 query，强制 `doc_type=release_notes`
+2. 召回 release notes 后再做普通文档补充
+3. 版本类问题加入路由/多 query
+
+### 状态
+
+TODO。已记录 g15。
+
+---
+
+## BC-11：regex→pattern 答案正确但无引用
+
+```text
+query: Pydantic v2 迁移后，FastAPI 的 regex 参数应该改成什么？
+source_recall: true
+keyword_coverage: 1.0
+citation_hit: false
+```
+
+### 根因
+
+- 答案内容正确：`regex` -> `pattern`
+- 没有引用
+- 说明“无引用”是当前生成的主要失败模式，而不是知识错误
+
+### 干预候选
+
+同 BC-08。
 
 ---
 

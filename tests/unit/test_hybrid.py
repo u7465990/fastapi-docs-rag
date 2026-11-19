@@ -3,7 +3,7 @@
 from fastapi_docs_rag.retrieval.bm25 import BM25Index, expand_query, tokenize
 from fastapi_docs_rag.retrieval.dense import SearchHit
 from fastapi_docs_rag.retrieval.hybrid import HybridRetriever
-from fastapi_docs_rag.retrieval.rerank import LexicalReranker
+from fastapi_docs_rag.retrieval.rerank import CrossEncoderReranker, LexicalReranker
 
 
 def _hit(chunk_id: str, url: str, title: str, text: str, score: float = 0.0) -> SearchHit:
@@ -92,3 +92,24 @@ def test_lexical_reranker_boosts_title_match() -> None:
     hits = LexicalReranker().rerank("background tasks", [generic, titled], limit=2)
 
     assert hits[0].chunk_id == "b"
+
+
+def test_cross_encoder_reranker_uses_model_scores(tmp_path) -> None:
+    class FakeEncoder:
+        def rerank(self, query, documents):
+            assert query
+            assert len(documents) == 2
+            return [0.1, 0.9]
+
+    reranker = CrossEncoderReranker(
+        "fake",
+        cache_dir=tmp_path,
+        encoder=FakeEncoder(),
+    )
+    generic = _hit("a", "https://x/a/", "Generic", "nothing", score=0.02)
+    titled = _hit("b", "https://x/b/", "Background Tasks", "nothing", score=0.02)
+
+    hits = reranker.rerank("background tasks", [generic, titled], limit=2)
+
+    assert hits[0].chunk_id == "b"
+    assert hits[0].rerank_score == 0.9

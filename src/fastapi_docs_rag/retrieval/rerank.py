@@ -8,9 +8,21 @@ baseline before adding a real cross-encoder.
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
+from typing import Any, Protocol
 
 from fastapi_docs_rag.retrieval.bm25 import expand_query, tokenize
 from fastapi_docs_rag.retrieval.dense import SearchHit
+
+
+class Reranker(Protocol):
+    def rerank(
+        self,
+        query: str,
+        hits: list[SearchHit],
+        *,
+        limit: int,
+    ) -> list[SearchHit]: ...
 
 
 class LexicalReranker:
@@ -50,4 +62,69 @@ class LexicalReranker:
             if query_lower and query_lower in title_text:
                 boost += self.title_weight
             rescored.append(replace(hit, score=hit.score + boost))
+        return sorted(rescored, key=lambda item: item.score, reverse=True)[:limit]
+
+
+class CrossEncoderReranker:
+    """Semantic cross-encoder reranker backed by FastEmbed ONNX.
+
+    The model is loaded lazily; if FastEmbed or the model is unavailable, the
+    caller can fall back to LexicalReranker instead of failing the request.
+    """
+
+    def __init__(
+        self,
+        model_name: str,
+        *,
+        cache_dir: Path,
+        threads: int = 4,
+        encoder: Any | None = None,
+    ) -> None:
+        self.model_name = model_name
+        self.cache_dir = cache_dir
+        self.threads = threads
+        self._encoder = encoder
+        self._failed = False
+
+    def _get_encoder(self) -> Any:
+        if self._failed:
+            raise RuntimeError("cross-encoder is unavailable; using lexical fallback")
+        if self._encoder is None:
+            try:
+                from fastembed.rerank.cross_encoder import TextCrossEncoder
+
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                self._encoder = TextCrossEncoder(
+                    model_name=self.model_name,
+                    cache_dir=str(self.cache_dir),
+                    threads=self.threads,
+                    lazy_load=True,
+                )
+            except Exception:
+                self._failed = True
+                raise
+        return self._encoder
+
+    def rerank(
+        self,
+        query: str,
+        hits: list[SearchHit],
+        *,
+        limit: int,
+    ) -> list[SearchHit]:
+        if not hits:
+            return []
+        documents = [
+            f"{hit.title}\n{' > '.join(hit.section_path)}\n{hit.text}"
+            for hit in hits
+        ]
+        scores = list(self._get_encoder().rerank(query, documents))
+        if len(scores) != len(hits):
+            raise RuntimeError(
+                f"reranker returned {len(scores)} scores for {len(hits)} hits"
+            )
+        rescored = [
+            replace(hit, score=float(score), rerank_score=float(score))
+            for hit, score in zip(hits, scores, strict=True)
+        ]
         return sorted(rescored, key=lambda item: item.score, reverse=True)[:limit]

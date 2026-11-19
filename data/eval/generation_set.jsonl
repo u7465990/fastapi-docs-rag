@@ -12,3 +12,13 @@
 {"id": "g12", "question": "FastAPI 怎么接收文件上传？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/request-files/"], "expected_keywords": ["UploadFile"], "category": "tutorial", "should_refuse": false}
 {"id": "g13", "question": "FastAPI 怎么做 3D 建模和渲染？", "expected_urls": [], "expected_keywords": [], "category": "no-answer", "should_refuse": true, "force_no_context": true}
 {"id": "g14", "question": "FastAPI 能用来训练大语言模型吗？", "expected_urls": [], "expected_keywords": [], "category": "no-answer", "should_refuse": true, "force_no_context": true}
+{"id": "g15", "question": "FastAPI 0.100.0 对 on_startup 和 on_shutdown 做了什么变更？", "expected_urls": ["https://fastapi.tiangolo.com/release-notes/"], "expected_keywords": ["0.100.0"], "category": "version", "should_refuse": false}
+{"id": "g16", "question": "Pydantic v2 迁移后，FastAPI 的 regex 参数应该改成什么？", "expected_urls": ["https://fastapi.tiangolo.com/how-to/migrate-from-pydantic-v1-to-pydantic-v2/"], "expected_keywords": ["pattern"], "category": "version", "should_refuse": false}
+{"id": "g17", "question": "Annotated 和 Depends 在函数签名里怎么配合？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/dependencies/"], "expected_keywords": ["Annotated", "Depends"], "category": "code", "should_refuse": false}
+{"id": "g18", "question": "HTTPException 的 detail 和 headers 参数怎么用？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/handling-errors/"], "expected_keywords": ["HTTPException", "headers"], "category": "code", "should_refuse": false}
+{"id": "g19", "question": "FastAPI 怎么做视频转码和推流？", "expected_urls": [], "expected_keywords": [], "category": "no-answer", "should_refuse": true}
+{"id": "g20", "question": "FastAPI 支持训练 GPT 大模型吗？", "expected_urls": [], "expected_keywords": [], "category": "no-answer", "should_refuse": true}
+{"id": "g21", "question": "BackgroundTasks 和 Celery 应该怎么选？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/background-tasks/"], "expected_keywords": ["BackgroundTasks", "Celery"], "category": "hard-negative", "should_refuse": false}
+{"id": "g22", "question": "Depends 在路径操作装饰器里和函数参数里有什么区别？", "expected_urls": ["https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-in-path-operation-decorators/"], "expected_keywords": ["Depends", "装饰器"], "category": "hard-negative", "should_refuse": false}
+{"id": "g23", "question": "FastAPI 0.162.0 的 release notes 里有哪些废弃项？", "expected_urls": ["https://fastapi.tiangolo.com/release-notes/"], "expected_keywords": ["0.162.0"], "category": "version", "should_refuse": false}
+{"id": "g24", "question": "lifespan 和 startup/shutdown 哪个是推荐写法？", "expected_urls": ["https://fastapi.tiangolo.com/advanced/events/"], "expected_keywords": ["lifespan", "startup", "shutdown"], "category": "citation", "should_refuse": false}

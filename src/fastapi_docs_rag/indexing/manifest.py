@@ -60,6 +60,13 @@ class IndexManifest:
         )
 
 
+def save_manifest_history(manifest: IndexManifest, live_path: Path) -> Path:
+    """Keep every build manifest for version/history inspection."""
+    history_path = live_path.parent / "history" / f"{manifest.build_id}.json"
+    manifest.save(history_path)
+    return history_path
+
+
 def document_hashes(documents: Sequence[ParsedDocument]) -> dict[str, str]:
     return {
         document.relative_path.as_posix(): document.content_sha256

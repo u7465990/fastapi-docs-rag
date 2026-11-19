@@ -6,7 +6,7 @@ from dataclasses import replace
 
 from fastapi_docs_rag.retrieval.bm25 import BM25Index
 from fastapi_docs_rag.retrieval.dense import DenseRetriever, SearchHit
-from fastapi_docs_rag.retrieval.rerank import LexicalReranker
+from fastapi_docs_rag.retrieval.rerank import LexicalReranker, Reranker
 
 
 class HybridRetriever:
@@ -20,7 +20,8 @@ class HybridRetriever:
         rrf_k: int = 60,
         dense_weight: float = 2.0,
         bm25_weight: float = 0.5,
-        reranker: LexicalReranker | None = None,
+        reranker: Reranker | None = None,
+        rerank_top_k: int = 20,
     ) -> None:
         self.dense = dense
         self.bm25 = bm25
@@ -30,6 +31,7 @@ class HybridRetriever:
         self.dense_weight = dense_weight
         self.bm25_weight = bm25_weight
         self.reranker = reranker
+        self.rerank_top_k = rerank_top_k
 
     def search(
         self,
@@ -80,29 +82,30 @@ class HybridRetriever:
         ranked = sorted(fused.items(), key=lambda item: item[1], reverse=True)
         candidates = [replace(by_id[key], score=score) for key, score in ranked]
         if self.reranker is not None:
-            # Dense top-1 is high precision on this corpus. Keep it fixed and
-            # use the lexical reranker only to reorder the tail; otherwise a
-            # title-token boost can displace a correct dense top-1.
-            dense_top = next(
-                (
-                    hit
-                    for hit in candidates
-                    if (hit.chunk_id or hit.url)
-                    == (dense_hits[0].chunk_id or dense_hits[0].url)
-                ),
-                None,
-            )
-            if dense_top is None or limit == 1:
-                return self.reranker.rerank(query, candidates, limit=limit)
-            tail = [
-                hit
-                for hit in candidates
-                if (hit.chunk_id or hit.url)
-                != (dense_hits[0].chunk_id or dense_hits[0].url)
-            ]
-            return [dense_top] + self.reranker.rerank(
-                query,
-                tail,
-                limit=limit - 1,
-            )
+            candidates = candidates[: self.rerank_top_k]
+            try:
+                reranked = self.reranker.rerank(query, candidates, limit=limit)
+            except Exception:  # noqa: BLE001 - model failure must not break chat
+                reranked = LexicalReranker().rerank(query, candidates, limit=limit)
+            # Keep the dense top-1 for the lexical fallback; a real
+            # cross-encoder is allowed to reorder it.
+            if not any(hit.rerank_score is not None for hit in reranked):
+                dense_top = next(
+                    (
+                        hit
+                        for hit in candidates
+                        if (hit.chunk_id or hit.url)
+                        == (dense_hits[0].chunk_id or dense_hits[0].url)
+                    ),
+                    None,
+                )
+                if dense_top is not None and limit > 1:
+                    tail = [
+                        hit
+                        for hit in reranked
+                        if (hit.chunk_id or hit.url)
+                        != (dense_top.chunk_id or dense_top.url)
+                    ]
+                    reranked = [dense_top] + tail
+            return reranked[:limit]
         return candidates[:limit]

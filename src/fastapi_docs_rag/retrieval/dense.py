@@ -31,6 +31,7 @@ class SearchHit:
     score: float
     doc_type: str = "unknown"
     dense_score: float | None = None
+    rerank_score: float | None = None
 
 
 def build_filter(

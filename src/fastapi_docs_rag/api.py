@@ -50,7 +50,11 @@ from fastapi_docs_rag.observability.metrics import (
 from fastapi_docs_rag.retrieval.bm25 import BM25Index
 from fastapi_docs_rag.retrieval.dense import DenseRetriever, SearchHit
 from fastapi_docs_rag.retrieval.hybrid import HybridRetriever
-from fastapi_docs_rag.retrieval.rerank import LexicalReranker
+from fastapi_docs_rag.retrieval.rerank import (
+    CrossEncoderReranker,
+    LexicalReranker,
+    Reranker,
+)
 from fastapi_docs_rag.security import (
     RateLimiter,
     RateLimitExceeded,
@@ -264,6 +268,17 @@ def _get_retriever() -> DenseRetriever | HybridRetriever:
     if settings.retrieval_mode.lower() != "hybrid":
         return dense
     bm25 = BM25Index.from_qdrant(client, settings.qdrant_collection)
+    reranker: Reranker | None = None
+    if settings.rerank_enabled:
+        provider = settings.reranker_provider.lower()
+        if provider in {"fastembed", "cross_encoder", "cross-encoder"}:
+            reranker = CrossEncoderReranker(
+                settings.reranker_model,
+                cache_dir=settings.reranker_cache_dir,
+                threads=settings.reranker_threads,
+            )
+        else:
+            reranker = LexicalReranker()
     return HybridRetriever(
         dense,
         bm25,
@@ -272,7 +287,8 @@ def _get_retriever() -> DenseRetriever | HybridRetriever:
         rrf_k=settings.hybrid_rrf_k,
         dense_weight=settings.hybrid_dense_weight,
         bm25_weight=settings.hybrid_bm25_weight,
-        reranker=LexicalReranker() if settings.rerank_enabled else None,
+        reranker=reranker,
+        rerank_top_k=settings.rerank_top_k,
     )
 
 
@@ -362,6 +378,18 @@ def _reserve_embedding(query: str) -> None:
     metrics.record_tokens("embedding", estimated)
 
 
+def _retrieval_is_confident(hits: list[SearchHit]) -> bool:
+    if not hits:
+        return False
+    settings = get_settings()
+    threshold = (
+        settings.rerank_min_score
+        if any(hit.rerank_score is not None for hit in hits)
+        else settings.retrieval_min_score
+    )
+    return retrieval_confidence(hits) >= threshold
+
+
 @app.post("/api/v1/search", response_model=SearchResponse)
 def search(http_request: Request, payload: SearchRequest) -> SearchResponse:
     """Dense retrieval over the current index; no generation."""
@@ -426,7 +454,7 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
         hits,
         max_tokens=settings.max_context_tokens,
     )
-    if retrieval_confidence(hits) < settings.retrieval_min_score:
+    if not _retrieval_is_confident(hits):
         hits = []
     if not hits:
         _save_turn(payload.session_id, payload.query, REFUSAL)
@@ -505,7 +533,7 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
         hits,
         max_tokens=settings.max_context_tokens,
     )
-    if retrieval_confidence(hits) < settings.retrieval_min_score:
+    if not _retrieval_is_confident(hits):
         hits = []
     headers = {
         "Cache-Control": "no-cache",

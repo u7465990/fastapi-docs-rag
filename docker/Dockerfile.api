@@ -13,7 +13,7 @@ COPY pyproject.toml README.md ./
 # code later only reruns the fast no-deps package install.
 RUN mkdir -p src/fastapi_docs_rag \
     && printf '__version__ = "0.0.0"\n' > src/fastapi_docs_rag/__init__.py \
-    && pip install --index-url "$PIP_INDEX_URL" .
+    && pip install --index-url "$PIP_INDEX_URL" ".[rerank]"
 
 COPY src ./src
 RUN pip install --no-deps --force-reinstall --index-url "$PIP_INDEX_URL" .

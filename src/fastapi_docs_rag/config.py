@@ -59,8 +59,11 @@ class Settings(BaseSettings):
     embedding_daily_token_budget: int = 200_000
 
     # Reranker
-    reranker_provider: str = "local"
-    reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    reranker_provider: str = "fastembed"
+    reranker_model: str = "BAAI/bge-reranker-base"
+    reranker_cache_dir: Path = Path("data/cache/fastembed")
+    reranker_threads: int = 4
+    rerank_min_score: float = 0.0
 
     # Qdrant
     qdrant_url: str = "http://localhost:6333"

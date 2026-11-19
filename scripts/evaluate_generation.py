@@ -25,7 +25,16 @@ from fastapi_docs_rag.retrieval.rerank import LexicalReranker  # noqa: E402
 
 DEFAULT_GOLDEN = Path("data/eval/generation_set.jsonl")
 CITATION_RE = re.compile(r"\[(\d+)\]")
-REFUSAL_MARKERS = ("没有", "不足", "未找到", "无法回答", "不知道")
+REFUSAL_MARKERS = (
+    "没有找到",
+    "没有足够",
+    "未找到",
+    "无法回答",
+    "不知道",
+    "无法提供",
+    "不直接提供",
+    "不支持",
+)
 
 
 def load_cases(path: Path) -> list[dict]:
@@ -83,11 +92,12 @@ def main() -> None:
     settings = get_settings()
     parser = argparse.ArgumentParser()
     parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN)
+    parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--limit", type=int, default=0, help="evaluate only first N cases")
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
 
-    cases = load_cases(args.golden)
+    cases = load_cases(args.golden)[args.start :]
     if args.limit:
         cases = cases[: args.limit]
 

@@ -202,6 +202,60 @@ wheels = [
 ]
 
 [[package]]
+name = "fastapi-docs-rag"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyyaml" },
+    { name = "qdrant-client" },
+    { name = "redis" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+rag = [
+    { name = "fastembed" },
+    { name = "langchain" },
+    { name = "langchain-openai" },
+    { name = "langgraph" },
+]
+rerank = [
+    { name = "fastembed" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.116" },
+    { name = "fastembed", marker = "extra == 'rag'", specifier = ">=0.7" },
+    { name = "fastembed", marker = "extra == 'rerank'", specifier = ">=0.7" },
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "langchain", marker = "extra == 'rag'", specifier = ">=1.0" },
+    { name = "langchain-openai", marker = "extra == 'rag'", specifier = ">=1.0" },
+    { name = "langgraph", marker = "extra == 'rag'", specifier = ">=1.0" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15" },
+    { name = "pydantic", specifier = ">=2.11" },
+    { name = "pydantic-settings", specifier = ">=2.10" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "qdrant-client", specifier = ">=1.15" },
+    { name = "redis", specifier = ">=6.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35" },
+]
+provides-extras = ["rag", "rerank", "dev"]
+
+[[package]]
 name = "fastembed"
 version = "0.9.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -603,56 +657,6 @@ sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/be/db/7f9195371c824e
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/3f/f6/25232abfce5cc696c21f7947e6ae11cc6b124e5099783408ff8552c545a3/langchain_protocol-0.0.21-py3-none-any.whl", hash = "sha256:7f42f9eae7c08bb9d74850057da50b5483970a3df91b7a8a5aadec6a3dfa4d12", size = 7418, upload-time = "2026-11-05T16:16:45.444Z" },
 ]
-
-[[package]]
-name = "fastapi-docs-rag"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "pyyaml" },
-    { name = "qdrant-client" },
-    { name = "redis" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-]
-rag = [
-    { name = "fastembed" },
-    { name = "langchain" },
-    { name = "langchain-openai" },
-    { name = "langgraph" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi", specifier = ">=0.116" },
-    { name = "fastembed", marker = "extra == 'rag'", specifier = ">=0.7" },
-    { name = "httpx", specifier = ">=0.28" },
-    { name = "langchain", marker = "extra == 'rag'", specifier = ">=1.0" },
-    { name = "langchain-openai", marker = "extra == 'rag'", specifier = ">=1.0" },
-    { name = "langgraph", marker = "extra == 'rag'", specifier = ">=1.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15" },
-    { name = "pydantic", specifier = ">=2.11" },
-    { name = "pydantic-settings", specifier = ">=2.10" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "qdrant-client", specifier = ">=1.15" },
-    { name = "redis", specifier = ">=6.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35" },
-]
-provides-extras = ["rag", "dev"]
 
 [[package]]
 name = "langgraph"

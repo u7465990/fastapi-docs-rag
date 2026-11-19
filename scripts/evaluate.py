@@ -19,7 +19,10 @@ from fastapi_docs_rag.indexing.embedder import make_embedder  # noqa: E402
 from fastapi_docs_rag.retrieval.bm25 import BM25Index  # noqa: E402
 from fastapi_docs_rag.retrieval.dense import DenseRetriever  # noqa: E402
 from fastapi_docs_rag.retrieval.hybrid import HybridRetriever  # noqa: E402
-from fastapi_docs_rag.retrieval.rerank import LexicalReranker  # noqa: E402
+from fastapi_docs_rag.retrieval.rerank import (  # noqa: E402
+    CrossEncoderReranker,
+    LexicalReranker,
+)
 
 DEFAULT_GOLDEN = Path("data/eval/golden_set.jsonl")
 
@@ -58,6 +61,11 @@ def main() -> None:
     parser.add_argument("--collection", default=settings.qdrant_collection)
     parser.add_argument("--mode", choices=("dense", "hybrid"), default="dense")
     parser.add_argument("--rerank", action="store_true")
+    parser.add_argument(
+        "--rerank-provider",
+        choices=("lexical", "fastembed"),
+        default="lexical",
+    )
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
     if args.top_k <= 0:
@@ -68,6 +76,16 @@ def main() -> None:
     client = QdrantClient(url=settings.qdrant_url)
     dense = DenseRetriever(client, embedder, collection=args.collection)
     if args.mode == "hybrid":
+        reranker = None
+        if args.rerank:
+            if args.rerank_provider == "fastembed":
+                reranker = CrossEncoderReranker(
+                    settings.reranker_model,
+                    cache_dir=settings.reranker_cache_dir,
+                    threads=settings.reranker_threads,
+                )
+            else:
+                reranker = LexicalReranker()
         retriever = HybridRetriever(
             dense,
             BM25Index.from_qdrant(client, args.collection),
@@ -76,7 +94,8 @@ def main() -> None:
             rrf_k=settings.hybrid_rrf_k,
             dense_weight=settings.hybrid_dense_weight,
             bm25_weight=settings.hybrid_bm25_weight,
-            reranker=LexicalReranker() if args.rerank else None,
+            reranker=reranker,
+            rerank_top_k=settings.rerank_top_k,
         )
     else:
         retriever = dense

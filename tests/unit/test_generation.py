@@ -96,11 +96,17 @@ def test_context_selection_dedupes_urls_and_respects_budget() -> None:
     assert selected[0].url == _hit().url
 
 
-def test_retrieval_confidence_uses_dense_score() -> None:
+def test_retrieval_confidence_prefers_rerank_score() -> None:
     hit = _hit()
-    hit = SearchHit(**{**hit.__dict__, "dense_score": 0.72})
+    hit = SearchHit(
+        **{
+            **hit.__dict__,
+            "dense_score": 0.72,
+            "rerank_score": 0.31,
+        }
+    )
 
-    assert retrieval_confidence([hit]) == 0.72
+    assert retrieval_confidence([hit]) == 0.31
 
 
 def test_citation_check_flags_invalid_index() -> None:

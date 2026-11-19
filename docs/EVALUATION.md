@@ -220,10 +220,11 @@ uv run --no-sync python scripts/evaluate.py --mode hybrid --rerank
 
 ### 数据集
 
-`data/eval/generation_set.jsonl`，14 条：
+`data/eval/generation_set.jsonl`，24 条：
 
-- 12 条可回答
-- 2 条无答案，强制无上下文，专门测试拒答路径
+- 20 条可回答
+- 4 条无答案（2 条强制无上下文，2 条真实检索后应拒答/否定）
+- 加入 version、code、hard-negative、真实 OOD 题
 
 字段：
 
@@ -246,34 +247,35 @@ uv run --no-sync python scripts/evaluate_generation.py
 ### 结果
 
 ```text
-cases: 14
-answerable: 12
-no_answer: 2
-passed: 13
-pass_rate: 0.929
-source_recall: 1.000
-citation_validity: 0.917
-citation_hit: 0.917
+cases: 24
+answerable: 20
+no_answer: 4
+passed: 20
+pass_rate: 0.833
+source_recall: 0.950
+citation_validity: 0.900
+citation_hit: 0.800
 keyword_coverage: 1.000
 refusal_accuracy: 1.000
-latency p50: 4815ms
-latency p95: 5483ms
+latency p50: 4791ms
+latency p95: 5383ms
+latency max: 6352ms
 ```
 
-### 唯一失败：g09
+### 失败分布
 
-```text
-query: OAuth2 密码流加 JWT 怎么在 FastAPI 里实现？
-expected: tutorial/security/oauth2-jwt/
-source_recall: true   # oauth2-jwt 在 sources 里
-citation_hit: false   # 模型只引用了 [1] simple-oauth2
-```
+- `g04` BackgroundTasks：内容正确，但没有引用
+- `g08` HTTPS/TLS：内容正确，但没有引用
+- `g15` 0.100.0 版本题：期望 release-notes，检索没召回
+- `g16` regex→pattern：内容正确，但没有引用
+- `g09` OAuth2/JWT 在 prompt 强化后已通过
 
-回答内容本身包含 JWT/OAuth2，关键词覆盖 1.0，但引用指向了 `simple-oauth2`，不是 `oauth2-jwt`。
+所以主要问题从“答案错”变成了：
 
-这是**引用选择错误**，不是检索失败，也不是答案内容完全错误。
+1. 模型有时不写 `[n]`
+2. 版本题检索仍偏弱
 
-已记录到 `docs/BAD_CASES.md`。
+无答案题 4/4 都正确拒答/否定，refusal_accuracy = 1.0。
 
 ### 口径说明
 

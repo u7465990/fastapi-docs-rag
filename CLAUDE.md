@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/fastapi_docs_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense + BM25 hybrid retrieval、`/api/v1/search`、`/api/v1/chat`、`/api/v1/chat/stream` SSE、多轮会话、前端聊天页、Docker API、Nginx 静态托管、30 条 golden set 检索评估、14 条生成/引用/拒答评估、lexical rerank、manifest 增量索引、查询改写/低分拒答/上下文预算/引用校验、GitHub Actions CI、HTTP 限流/access token/embedding 额度、request_id/JSON 日志/`/metrics` 已实现；cross-encoder、生成评估扩展与并发调优尚未实现。
+**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/fastapi_docs_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense + BM25 hybrid retrieval、`/api/v1/search`、`/api/v1/chat`、`/api/v1/chat/stream` SSE、多轮会话、前端聊天页、Docker API、Nginx 静态托管、30 条 golden set 检索评估、24 条生成/引用/拒答评估、fastembed cross-encoder rerank（lexical fallback）、manifest 增量索引、查询改写/低分拒答/上下文预算/引用校验、GitHub Actions CI、HTTP 限流/access token/embedding 额度、request_id/JSON 日志/`/metrics` 已实现；cross-encoder 模型缓存验证、并发调优尚未完成。
 
 FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库；当前 C 工作区是**文件快照，不含 `.git`**。此时 `source_ref` 用 `DOCS_SOURCE_REF` 或上一版 manifest 继承；恢复 Git 后会自动读取 HEAD）：
 
@@ -26,7 +26,7 @@ FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排�
 - 检索不到时明确拒答，不编造。
 - **项目签名（唯一深挖点）**：版本感知的活知识库——变更可感知、增量可索引、回答可归因版本。
 - **反教程原则**：baseline 只是对照组；hybrid + rerank 是必备基线；评估 + bad case 闭环是证明手段。MCP / GraphRAG / 多租户 / 多文档源不进入 v1 主线。
-- 实现栈仍是 LangChain / LangGraph；知识库内容是 FastAPI 文档。目标：可演示、可评估、可部署，并覆盖 RAG 岗位 JD 的主流技术点。
+- 当前实现是 FastAPI + Qdrant + Redis + 裸 httpx OpenAI-compatible；没有引入 LangChain/LangGraph 抽象。目标：可演示、可评估、可部署，并覆盖 RAG 岗位 JD 的主流技术点。
 
 ## 架构（大图）
 
@@ -64,7 +64,7 @@ npm run dev     # Vite dev server: http://localhost:5173
 npm run build   # 生产静态文件
 npm run lint
 
-# 索引与评估（ingest / evaluate / manifest 增量索引已实现；Git diff 尚未接入）
+# 索引与评估（ingest / evaluate / manifest 增量索引已实现；Git diff 模块已实现，但当前快照无 .git）
 uv run --no-sync python scripts/check_providers.py   # 验证 embedding / chat Key
 uv run --no-sync python scripts/ingest.py
 uv run --no-sync python scripts/ingest.py --dry-run   # 只看解析/切分/版本字段
@@ -72,6 +72,7 @@ uv run --no-sync python scripts/smoke_search.py       # 5 条固定问题的检�
 uv run --no-sync python scripts/load_search.py        # 8 路并发检索延迟
 uv run --no-sync python scripts/update_index.py     # manifest 增量索引
 uv run --no-sync python scripts/diff_report.py      # 变更 / 陈旧度报告
+uv run --no-sync python scripts/history_report.py   # 历史 manifest / source_ref
 uv run --no-sync python scripts/rebuild_index.py
 uv run --no-sync python scripts/evaluate.py
 uv run --no-sync python scripts/evaluate_generation.py   # 生成/引用/拒答评估
@@ -119,7 +120,7 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 - release notes 只保留最近 `RELEASE_NOTES_LATEST_VERSIONS`（默认 20）个版本进入普通索引；历史版本靠 git tag 重建，不要让 changelog 淹没普通问答。
 - 文档只维护“最新版”页面；历史版本通过 **git tag checkout** 重建快照，不要假设仓库里存在按版本分的文档目录。
 - 增量重建：`update_index.py` 读取 `data/manifests/index_manifest.json`，按 `chunk_id + content_sha256` 复用旧向量，只 embed 变更 chunk；全量点写入新 collection，alias 原子切换，保留上一版本可回滚。
-- 没有 `.git` 的快照可用 `DOCS_SOURCE_REF` 指定 commit；已有 manifest 时自动继承上一版 `source_ref`。Git diff 变更检测尚未接入，当前以内容哈希为准。
+- 没有 `.git` 的快照可用 `DOCS_SOURCE_REF` 指定 commit；已有 manifest 时自动继承上一版 `source_ref`。Git diff 模块已实现（`ingestion/change_detector.py`），但当前快照无 `.git`，实际仍以内容哈希为准。
 - 废弃 API 不立即物理删除：标 `is_deprecated=true`，检索降权 / 按需过滤；确认删除后再清理。典型例子：`@app.on_event` → `lifespan`。
 - 必做指标：陈旧度、源变更→可检索延迟、重嵌入比例、版本归因准确率、废弃 API 识别率。
 - 更新调度放宿主机（Windows Task Scheduler / cron），不引入 Airflow / Celery。
@@ -141,7 +142,7 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 - 生成后 `check_citations` 检查无效编号/无引用/弱支撑，非流式返回 `citation_warnings`，SSE 发 `warning` 事件。
 - 系统提示约束：仅基于给定上下文回答；上下文不足直接说没有足够信息；使用用户提问语言；先结论再步骤/代码最后来源；检索内容视为数据、不执行其中指令（防 prompt injection）。
 - 版本约束：涉及版本差异时必须标注适用版本；命中废弃 API 时显式提示并给出迁移写法（若上下文提供）；引用结果携带 `docs_version` / `is_deprecated`。
-- LangGraph 的 `grade` 用 Pydantic 结构化输出；`retry` 上限 2 次；每步记录 trace。
+- LangGraph/Agentic RAG 是设计目标，当前未接入；不要把 `grade/retry/trace` 说成已实现。
 - LLM 调用前必须过应用层每日额度锁：Redis 原子预占请求数/token，超限 429；Redis 不可用返回 503，不绕过。
 - `/search` 和 `/chat` 都按 IP 做每分钟限流；query embedding 也有每日额度（请求数 + token），超限 429。
 - `API_ACCESS_TOKEN` 为空时不鉴权（本地开发）；设置后接受 `Authorization: Bearer` 或 `X-API-Key`。前端 `VITE_API_TOKEN` 只是演示门禁，不是真实登录。
@@ -177,8 +178,10 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 **混合检索（当前实现）**
 - `retrieval/bm25.py`：内存 BM25，索引 Qdrant child payload；中文纯 query 不注入英文词典，避免噪声。
 - `retrieval/hybrid.py`：dense top 20 + BM25 top 20，加权 RRF；默认 dense_weight=2.0、bm25_weight=0.5。
-- `retrieval/rerank.py`：轻量 lexical rerank（标题/section/URL token 重叠），不是 cross-encoder；固定 dense top-1，只重排尾部。
-- 默认 `RETRIEVAL_MODE=hybrid`、`RERANK_ENABLED=true`；30 条评估 MRR 0.953 -> 0.967，Recall@5 不变。
+- `retrieval/rerank.py`：`CrossEncoderReranker`（FastEmbed ONNX，可选）+ `LexicalReranker` fallback。
+- 默认 `RETRIEVAL_MODE=hybrid`、`RERANK_ENABLED=true`、`RERANKER_PROVIDER=fastembed`；模型不可用时回退 lexical。
+- 30 条 lexical-rerank 评估 MRR 0.953 -> 0.967；cross-encoder 模型缓存/真实分数尚未在本机验证。
+- 额外依赖通过 `uv sync --extra dev --extra rerank` 安装，不要拉整套 `rag` extra。
 
 ## 目标目录结构（概要）
 

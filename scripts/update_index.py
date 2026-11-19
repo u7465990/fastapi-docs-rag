@@ -21,7 +21,9 @@ from fastapi_docs_rag.indexing.manifest import (  # noqa: E402
     IndexManifest,
     build_manifest,
     diff_manifest,
+    save_manifest_history,
 )
+from fastapi_docs_rag.ingestion.change_detector import git_changed_docs  # noqa: E402
 from fastapi_docs_rag.ingestion.parser import iter_documents  # noqa: E402
 from fastapi_docs_rag.ingestion.source import detect_source_info  # noqa: E402
 
@@ -109,6 +111,11 @@ def main() -> None:
         or (previous.source_ref if previous else ""),
     )
     changes = diff_manifest(previous, documents, chunks)
+    git_files = git_changed_docs(
+        repo_root,
+        previous.source_ref if previous else None,
+        source.source_ref,
+    )
     build_id = args.build_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
     print(f"documents:       {len(documents)}")
@@ -121,6 +128,7 @@ def main() -> None:
     print(f"deleted_docs:    {len(changes['deleted_docs'])}")
     print(f"changed_chunks:  {len(changes['changed_chunks'])}")
     print(f"reused_chunks:   {changes['reused_chunks']}")
+    print(f"git_changed:     {len(git_files) if git_files is not None else 'unavailable'}")
 
     if args.dry_run:
         return
@@ -185,8 +193,10 @@ def main() -> None:
         previous=previous,
     )
     manifest.save(args.manifest)
+    history_path = save_manifest_history(manifest, args.manifest)
 
     print(f"build_collection: {stats.build_collection}")
+    print(f"manifest_history: {history_path}")
     print(f"alias:            {stats.alias}")
     print(f"vectors:          {stats.vectors}")
     print(f"reused_vectors:   {stats.reused_vectors}")
