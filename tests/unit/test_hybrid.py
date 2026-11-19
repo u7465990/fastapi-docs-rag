@@ -85,6 +85,41 @@ def test_hybrid_rrf_merges_dense_and_bm25() -> None:
     assert {hit.chunk_id for hit in hits} == {"a", "b"}
 
 
+def test_high_confidence_dense_hit_skips_rerank() -> None:
+    a = _hit("a", "https://x/a/", "A", "a", score=0.9)
+    a = SearchHit(**{**a.__dict__, "dense_score": 0.9})
+    b = _hit("b", "https://x/b/", "B", "b", score=0.8)
+    b = SearchHit(**{**b.__dict__, "dense_score": 0.8})
+    called = {"value": False}
+
+    class Dense:
+        def search(self, query, **kwargs):
+            return [a, b]
+
+    class Sparse:
+        def search(self, query, **kwargs):
+            return []
+
+    class Reranker:
+        def rerank(self, query, hits, *, limit):
+            called["value"] = True
+            return hits[:limit]
+
+    hybrid = HybridRetriever(
+        Dense(),
+        Sparse(),
+        dense_weight=1.0,
+        bm25_weight=1.0,
+        reranker=Reranker(),
+        rerank_skip_score=0.75,
+    )
+
+    hits = hybrid.search("a", limit=2)
+
+    assert hits
+    assert called["value"] is False
+
+
 def test_lexical_reranker_boosts_title_match() -> None:
     generic = _hit("a", "https://x/a/", "Generic", "nothing", score=0.02)
     titled = _hit("b", "https://x/b/", "Background Tasks", "nothing", score=0.02)

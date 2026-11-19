@@ -66,6 +66,7 @@ def main() -> None:
         choices=("lexical", "fastembed"),
         default="lexical",
     )
+    parser.add_argument("--rerank-skip-score", type=float, default=None)
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
     if args.top_k <= 0:
@@ -96,6 +97,11 @@ def main() -> None:
             bm25_weight=settings.hybrid_bm25_weight,
             reranker=reranker,
             rerank_top_k=settings.rerank_top_k,
+            rerank_skip_score=(
+                args.rerank_skip_score
+                if args.rerank_skip_score is not None
+                else settings.rerank_skip_score
+            ),
         )
     else:
         retriever = dense

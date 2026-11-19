@@ -58,6 +58,11 @@ from fastapi_docs_rag.observability.metrics import (
     set_request_id,
 )
 from fastapi_docs_rag.retrieval.bm25 import BM25Index
+from fastapi_docs_rag.retrieval.cache import (
+    RetrievalCache,
+    make_retrieval_cache,
+    make_retrieval_key,
+)
 from fastapi_docs_rag.retrieval.dense import DenseRetriever, SearchHit
 from fastapi_docs_rag.retrieval.hybrid import HybridRetriever
 from fastapi_docs_rag.retrieval.rerank import (
@@ -211,6 +216,7 @@ class SearchResponse(BaseModel):
     query: str
     count: int
     results: list[SearchResult]
+    timings: dict[str, float] = Field(default_factory=dict)
 
 
 class ChatRequest(BaseModel):
@@ -243,6 +249,7 @@ class ChatResponse(BaseModel):
     sources: list[ChatSource]
     session_id: str | None = None
     citation_warnings: list[str] = Field(default_factory=list)
+    timings: dict[str, float] = Field(default_factory=dict)
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:
@@ -300,6 +307,7 @@ def _get_retriever() -> DenseRetriever | HybridRetriever:
         bm25_weight=settings.hybrid_bm25_weight,
         reranker=reranker,
         rerank_top_k=settings.rerank_top_k,
+        rerank_skip_score=settings.rerank_skip_score,
     )
 
 
@@ -316,28 +324,56 @@ _RETRIEVAL_SEMAPHORE = asyncio.Semaphore(_SETTINGS.retrieval_max_concurrency)
 def _retrieval_hits(
     payload: ChatRequest | SearchRequest,
     history: list[dict[str, str]] | None = None,
-) -> list[SearchHit]:
+) -> tuple[list[SearchHit], dict[str, float]]:
     """Blocking retrieval, executed in a worker thread by async routes."""
     settings = get_settings()
+    started = time.perf_counter()
+    timings: dict[str, float] = {}
     query = payload.query
     if isinstance(payload, ChatRequest):
         query = rewrite_query(
             payload.query,
             history if history is not None else _load_history(payload.session_id),
         )
+    doc_type = route_doc_type(payload.query, payload.doc_type)
+    cache_key = None
+    if settings.retrieval_cache_enabled:
+        cache_key = make_retrieval_key(
+            query=query,
+            limit=payload.limit,
+            doc_type=doc_type,
+            docs_version=payload.docs_version,
+            include_deprecated=payload.include_deprecated,
+            include_meta=payload.include_meta,
+            include_reference=payload.include_reference,
+            identity=index_identity(),
+            settings=settings,
+        )
+        cached = _get_retrieval_cache().get(cache_key)
+        if cached is not None:
+            timings["retrieval_cache_hit"] = 1.0
+            timings["retrieval_ms"] = (time.perf_counter() - started) * 1000
+            return cached, timings
+
+    setup_started = time.perf_counter()
     retriever = _get_retriever()
+    timings["setup_ms"] = (time.perf_counter() - setup_started) * 1000
     hits = retriever.search(
         query,
         limit=payload.limit,
-        doc_type=route_doc_type(payload.query, payload.doc_type),
+        doc_type=doc_type,
         docs_version=payload.docs_version,
         include_deprecated=payload.include_deprecated,
         include_meta=payload.include_meta,
         include_reference=payload.include_reference,
+        timings=timings,
     )
     if isinstance(payload, ChatRequest):
         hits = select_context_hits(hits, max_tokens=settings.max_context_tokens)
-    return hits
+    timings["retrieval_ms"] = (time.perf_counter() - started) * 1000
+    if cache_key is not None:
+        _get_retrieval_cache().set(cache_key, hits)
+    return hits, timings
 
 
 @lru_cache(maxsize=1)
@@ -369,6 +405,11 @@ def _get_session_store() -> SessionStore:
 @lru_cache(maxsize=1)
 def _get_answer_cache() -> AnswerCache:
     return make_answer_cache(get_settings())
+
+
+@lru_cache(maxsize=1)
+def _get_retrieval_cache() -> RetrievalCache:
+    return make_retrieval_cache(get_settings())
 
 
 def _cache_options(payload: ChatRequest) -> dict[str, Any]:
@@ -421,6 +462,7 @@ def _cached_response(
         ],
         session_id=payload.session_id,
         citation_warnings=list(cached.get("citation_warnings", [])),
+        timings={"answer_cache_hit": 1.0},
     )
 
 
@@ -520,7 +562,7 @@ async def search(http_request: Request, payload: SearchRequest) -> SearchRespons
     await anyio.to_thread.run_sync(_reserve_embedding, payload.query)
     try:
         async with _RETRIEVAL_SEMAPHORE:
-            hits = await anyio.to_thread.run_sync(_retrieval_hits, payload)
+            hits, timings = await anyio.to_thread.run_sync(_retrieval_hits, payload)
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - dependency failures become 503
@@ -535,12 +577,14 @@ async def search(http_request: Request, payload: SearchRequest) -> SearchRespons
         results=[
             SearchResult.model_validate(hit, from_attributes=True) for hit in hits
         ],
+        timings=timings,
     )
 
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
     """Retrieve context, generate a grounded answer, and return cited sources."""
+    started = time.perf_counter()
     await anyio.to_thread.run_sync(_guard_http, http_request, "chat")
     history = await anyio.to_thread.run_sync(_load_history, payload.session_id)
     cached = await anyio.to_thread.run_sync(_cache_lookup, payload, history)
@@ -550,7 +594,7 @@ async def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
     cache_key = _cache_key_for(payload, history) if get_settings().cache_enabled else None
     try:
         async with _RETRIEVAL_SEMAPHORE:
-            hits = await anyio.to_thread.run_sync(
+            hits, timings = await anyio.to_thread.run_sync(
                 _retrieval_hits,
                 payload,
                 history,
@@ -574,6 +618,7 @@ async def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
             model=settings.llm_model,
             sources=[],
             session_id=payload.session_id,
+            timings={**timings, "total_ms": (time.perf_counter() - started) * 1000},
         )
 
     messages = build_messages(payload.query, hits, history)
@@ -593,6 +638,7 @@ async def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
 
     try:
         client = _get_chat_client()
+        llm_started = time.perf_counter()
         async with _LLM_SEMAPHORE:
             answer = await client.complete(messages)
             citation_check = check_citations(answer, hits)
@@ -618,6 +664,7 @@ async def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
             status_code=503,
             detail="generation service unavailable",
         ) from exc
+    timings["llm_ms"] = (time.perf_counter() - llm_started) * 1000
 
     await anyio.to_thread.run_sync(
         _save_turn,
@@ -642,6 +689,7 @@ async def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
         sources=sources,
         session_id=payload.session_id,
         citation_warnings=citation_check.warnings,
+        timings={**timings, "total_ms": (time.perf_counter() - started) * 1000},
     )
 
 
@@ -651,6 +699,7 @@ async def chat_stream(
     payload: ChatRequest,
 ) -> StreamingResponse:
     """Async SSE: sources first, then token chunks."""
+    started = time.perf_counter()
     await anyio.to_thread.run_sync(_guard_http, http_request, "chat")
     history = await anyio.to_thread.run_sync(_load_history, payload.session_id)
     cached = await anyio.to_thread.run_sync(_cache_lookup, payload, history)
@@ -678,6 +727,7 @@ async def chat_stream(
                     "session_id": payload.session_id,
                     "citation_warnings": cached_warnings,
                     "cache_hit": True,
+                    "timings": {"answer_cache_hit": 1.0},
                 },
             )
 
@@ -691,7 +741,7 @@ async def chat_stream(
     cache_key = _cache_key_for(payload, history) if get_settings().cache_enabled else None
     try:
         async with _RETRIEVAL_SEMAPHORE:
-            hits = await anyio.to_thread.run_sync(
+            hits, timings = await anyio.to_thread.run_sync(
                 _retrieval_hits,
                 payload,
                 history,
@@ -725,7 +775,14 @@ async def chat_stream(
             yield _sse("usage", {"input_tokens": None, "output_tokens": None})
             yield _sse(
                 "done",
-                {"model": settings.llm_model, "session_id": payload.session_id},
+                {
+                    "model": settings.llm_model,
+                    "session_id": payload.session_id,
+                    "timings": {
+                        **timings,
+                        "total_ms": (time.perf_counter() - started) * 1000,
+                    },
+                },
             )
 
         return StreamingResponse(
@@ -765,6 +822,7 @@ async def chat_stream(
             {"sources": [source.model_dump() for source in sources]},
         )
         parts: list[str] = []
+        llm_started = time.perf_counter()
         try:
             async with _LLM_SEMAPHORE:
                 async for chunk in client.stream(messages):
@@ -795,12 +853,17 @@ async def chat_stream(
         # The OpenAI-compatible stream does not expose usage in all providers;
         # keep the event for the fixed SSE contract, with null counts.
         yield _sse("usage", {"input_tokens": None, "output_tokens": None})
+        timings["llm_ms"] = (time.perf_counter() - llm_started) * 1000
         yield _sse(
             "done",
             {
                 "model": client.model,
                 "session_id": payload.session_id,
                 "citation_warnings": citation_check.warnings,
+                "timings": {
+                    **timings,
+                    "total_ms": (time.perf_counter() - started) * 1000,
+                },
             },
         )
 

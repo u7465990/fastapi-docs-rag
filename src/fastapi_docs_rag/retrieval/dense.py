@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -117,13 +118,18 @@ class DenseRetriever:
         include_deprecated: bool = True,
         include_meta: bool = False,
         include_reference: bool = False,
+        timings: dict[str, float] | None = None,
     ) -> list[SearchHit]:
         if not query.strip():
             raise ValueError("query must not be empty")
         if limit <= 0:
             raise ValueError("limit must be positive")
 
+        started = time.perf_counter()
         vector = self.embedder.embed([query])[0]
+        if timings is not None:
+            timings["embedding_ms"] = (time.perf_counter() - started) * 1000
+        started = time.perf_counter()
         response = self.client.query_points(
             collection_name=self.collection,
             query=vector,
@@ -138,6 +144,8 @@ class DenseRetriever:
             limit=limit,
             with_payload=True,
         )
+        if timings is not None:
+            timings["dense_ms"] = (time.perf_counter() - started) * 1000
         return [self._hit(point) for point in response.points]
 
     @staticmethod

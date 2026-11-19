@@ -210,20 +210,17 @@ Xenova/ms-marco-MiniLM-L-6-v2
 结果：
 
 ```text
-Recall@1: 0.933
-Recall@5: 1.000
-MRR: 0.967
-p50: 168ms
-p95: 332ms
+全量 rerank：MRR 0.967, p95 317ms
+高置信度跳过 rerank：MRR 0.983, p95 268ms
 max: 39.3s（含首次模型下载/重试）
 ```
 
 结论：
 
-- 与 lexical rerank 的 MRR 0.967 相同
-- 30 条上没有质量提升
-- 小模型的价值是把 cross-encoder 链路真正跑通，并降低 CPU 成本
-- 不能声称“cross-encoder 提升 MRR”
+- 小模型全量 rerank 与 lexical 的 MRR 0.967 相同
+- 对 dense 高置信度结果跳过 rerank 后，MRR 到 0.983，p95 从 317ms 降到 268ms
+- 这不是“cross-encoder 本身更强”，而是“不要用 rerank 破坏已经正确的 top-1”
+- 30 条样本仍小，不能把这个差值当泛化结论
 
 首次冷启动会联网校验模型，可能产生几十秒重试；模型缓存预热后 p95 约 332ms。
 

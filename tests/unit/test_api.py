@@ -19,6 +19,7 @@ def _disable_http_security(monkeypatch):
     monkeypatch.setattr(api, "_reserve_embedding", lambda query: None)
     monkeypatch.setattr(api, "_cache_lookup", lambda *args, **kwargs: None)
     monkeypatch.setattr(api, "_cache_store", lambda *args, **kwargs: None)
+    monkeypatch.setattr(api, "_get_retrieval_cache", lambda: FakeRetrievalCache())
 
 
 class FakeChatClient:
@@ -42,6 +43,14 @@ class FakeQuota:
         assert estimated_tokens > 0
         if self.error is not None:
             raise self.error
+
+
+class FakeRetrievalCache:
+    def get(self, key):
+        return None
+
+    def set(self, key, hits):
+        return None
 
 
 class FakeSessionStore:

@@ -65,6 +65,19 @@ status: 100 x 200
 100 并发检索没有报错，但 p95 从 20 并发的 533ms 升到 3.7s。  
 说明当前 16 个 retrieval 并发槽 + embedding/Qdrant 上游开始排队，吞吐没有随并发线性增长。
 
+尝试把 `RETRIEVAL_MAX_CONCURRENCY` 从 16 调到 32：
+
+```text
+100 并发 / 100 请求
+p50: 2486ms
+p95: 4539ms
+rps: 21.0
+错误: 0
+```
+
+p95 反而从 3.70s 升到 4.54s，吞吐从 25.1 降到 21.0。  
+结论：当前环境下提高 retrieval 并发只会把更多压力推给 embedding/Qdrant，**保留 16**，不为了数字好看盲目加并发。
+
 Chat：
 
 ```text
@@ -95,11 +108,42 @@ SSE：
 错误: 0
 ```
 
+## 阶段耗时
+
+`/api/v1/search` 和 `/api/v1/chat` 的响应包含 `timings`，例如：
+
+```json
+{
+  "setup_ms": 0.1,
+  "embedding_ms": 233.4,
+  "dense_ms": 4.8,
+  "bm25_ms": 2.8,
+  "rerank_ms": 0.4,
+  "retrieval_ms": 1186.4
+}
+```
+
+`retrieval_ms` 包含首次 retriever 初始化；预热后 `setup_ms` 会接近 0。  
+SSE 的 `done` 事件也带 `timings`。
+
+## 检索缓存
+
+相同 query + 过滤条件 + active index identity：
+
+```text
+first:  retrieval_ms 1186ms
+second: retrieval_ms 0.53ms, retrieval_cache_hit=1
+```
+
+缓存 key 包含 `source_ref/build_id`、embedding/rerank 模型、limit、doc_type、版本和 include 开关，索引切换后自然失效。
+
 ## 结论
 
 - `async` 让 API 路由不再阻塞 event loop，慢 LLM 请求不会占满线程池。
 - Chat 5 并发 p95 从 6.34s 降到 5.42s，约 15%；吞吐从 0.79 到 0.92 rps。
 - 检索没有明显提升，因为 query embedding / Qdrant 仍是外部依赖，瓶颈不在 event loop。
+- 提高 retrieval 并发到 32 反而使 100 并发 p95 从 3.70s 升到 4.54s，因此保留 16。
+- 检索结果缓存命中后 `retrieval_ms` 从 1186ms 降到 0.53ms。
 - 10 并发 chat 没有错误，但 p95 升高，说明上游模型延迟和并发限制开始成为主瓶颈。
 - 不能说“支持 100 并发 chat”；当前只验证到 10 并发 chat、100 并发检索。
 

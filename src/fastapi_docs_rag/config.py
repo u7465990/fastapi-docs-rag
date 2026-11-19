@@ -117,7 +117,13 @@ class Settings(BaseSettings):
 
     # Concurrency
     llm_max_concurrency: int = 8
+    # 100-concurrency tests showed 32 slots increased p95 vs 16; keep 16.
     retrieval_max_concurrency: int = 16
+
+    # Retrieval cache / rerank skipping
+    retrieval_cache_enabled: bool = True
+    retrieval_cache_ttl_seconds: int = 300
+    rerank_skip_score: float = 0.75
 
     # API
     admin_api_key: str = ""

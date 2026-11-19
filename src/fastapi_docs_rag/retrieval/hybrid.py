@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
 
 from fastapi_docs_rag.retrieval.bm25 import BM25Index
@@ -22,6 +23,7 @@ class HybridRetriever:
         bm25_weight: float = 0.5,
         reranker: Reranker | None = None,
         rerank_top_k: int = 20,
+        rerank_skip_score: float = 0.75,
     ) -> None:
         self.dense = dense
         self.bm25 = bm25
@@ -32,6 +34,7 @@ class HybridRetriever:
         self.bm25_weight = bm25_weight
         self.reranker = reranker
         self.rerank_top_k = rerank_top_k
+        self.rerank_skip_score = rerank_skip_score
 
     def search(
         self,
@@ -43,6 +46,7 @@ class HybridRetriever:
         include_deprecated: bool = True,
         include_meta: bool = False,
         include_reference: bool = False,
+        timings: dict[str, float] | None = None,
     ) -> list[SearchHit]:
         if not query.strip():
             raise ValueError("query must not be empty")
@@ -57,7 +61,9 @@ class HybridRetriever:
             include_deprecated=include_deprecated,
             include_meta=include_meta,
             include_reference=include_reference,
+            timings=timings,
         )
+        started = time.perf_counter()
         bm25_hits = self.bm25.search(
             query,
             limit=self.bm25_top_k,
@@ -67,6 +73,8 @@ class HybridRetriever:
             include_meta=include_meta,
             include_reference=include_reference,
         )
+        if timings is not None:
+            timings["bm25_ms"] = (time.perf_counter() - started) * 1000
 
         fused: dict[str, float] = {}
         by_id: dict[str, SearchHit] = {}
@@ -83,10 +91,22 @@ class HybridRetriever:
         candidates = [replace(by_id[key], score=score) for key, score in ranked]
         if self.reranker is not None:
             candidates = candidates[: self.rerank_top_k]
+            if (
+                dense_hits
+                and dense_hits[0].dense_score is not None
+                and dense_hits[0].dense_score >= self.rerank_skip_score
+            ):
+                if timings is not None:
+                    timings["rerank_ms"] = 0.0
+                    timings["rerank_skipped"] = 1.0
+                return candidates[:limit]
+            started = time.perf_counter()
             try:
                 reranked = self.reranker.rerank(query, candidates, limit=limit)
             except Exception:  # noqa: BLE001 - model failure must not break chat
                 reranked = LexicalReranker().rerank(query, candidates, limit=limit)
+            if timings is not None:
+                timings["rerank_ms"] = (time.perf_counter() - started) * 1000
             # Keep the dense top-1 for the lexical fallback; a real
             # cross-encoder is allowed to reorder it.
             if not any(hit.rerank_score is not None for hit in reranked):
