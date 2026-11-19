@@ -235,4 +235,22 @@ def generate_answer(
 ) -> str:
     if not hits:
         return REFUSAL
-    return client.complete(build_messages(query, hits, history))
+    messages = build_messages(query, hits, history)
+    answer = client.complete(messages)
+    citation_check = check_citations(answer, hits)
+    if citation_check.citations > 0 and not citation_check.invalid_indices:
+        return answer
+    retry_messages = [
+        *messages,
+        {"role": "assistant", "content": answer},
+        {
+            "role": "user",
+            "content": (
+                "上一次回答缺少有效引用。请重新回答，并为每个关键结论"
+                "标注本轮上下文中的 [n]；不要编造编号。"
+            ),
+        },
+    ]
+    retry_answer = client.complete(retry_messages)
+    retry_check = check_citations(retry_answer, hits)
+    return retry_answer if retry_check.citations > citation_check.citations else answer

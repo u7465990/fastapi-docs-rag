@@ -250,30 +250,30 @@ uv run --no-sync python scripts/evaluate_generation.py
 cases: 24
 answerable: 20
 no_answer: 4
-passed: 20
-pass_rate: 0.833
-source_recall: 0.950
-citation_validity: 0.900
-citation_hit: 0.800
+passed: 21
+pass_rate: 0.875
+source_recall: 1.000
+citation_validity: 1.000
+citation_hit: 0.900
 keyword_coverage: 1.000
 refusal_accuracy: 1.000
-latency p50: 4791ms
-latency p95: 5383ms
-latency max: 6352ms
+latency p50: 4802ms
+latency p95: 6471ms
+latency max: 6635ms
 ```
 
 ### 失败分布
 
-- `g04` BackgroundTasks：内容正确，但没有引用
-- `g08` HTTPS/TLS：内容正确，但没有引用
-- `g15` 0.100.0 版本题：期望 release-notes，检索没召回
-- `g16` regex→pattern：内容正确，但没有引用
-- `g09` OAuth2/JWT 在 prompt 强化后已通过
+- `g03` 路径/查询参数：内容正确，但引用选择没命中期望 URL
+- `g15` 0.100.0 版本题：自动路由到 release-notes，但索引只保留最近 20 个版本，模型正确地说“文档只覆盖 0.155–0.162”
+- `g22` 装饰器 vs 函数参数：内容正确，但引用指向了相邻依赖文档
 
-所以主要问题从“答案错”变成了：
+### 已修复
 
-1. 模型有时不写 `[n]`
-2. 版本题检索仍偏弱
+- `g04` BackgroundTasks：引用重试后通过
+- `g08` HTTPS/TLS：引用重试后通过
+- `g09` OAuth2/JWT：prompt 强化 + 引用重试后通过
+- `g16` regex→pattern：引用重试后通过
 
 无答案题 4/4 都正确拒答/否定，refusal_accuracy = 1.0。
 

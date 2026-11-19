@@ -109,6 +109,10 @@ class Settings(BaseSettings):
     langsmith_api_key: str = ""
     langsmith_project: str = "fastapi-rag-dev"
 
+    # Cache
+    cache_enabled: bool = True
+    cache_ttl_seconds: int = 3600
+
     # API
     admin_api_key: str = ""
     api_access_token: str = ""

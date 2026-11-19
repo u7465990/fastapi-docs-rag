@@ -14,18 +14,20 @@
 | BC-02 | 已改善，未解决 | OAuth2 + JWT 被 `simple-oauth2` 抢到 rank 3（hybrid rerank 后 rank 2） | MRR |
 | BC-03 | 已改善，未解决 | OAuth2PasswordBearer + JWT 多跳题 rank 4（hybrid rerank 后 rank 2） | MRR / 多跳 |
 | BC-04 | 已修复（标注） | 204 问题只标注 tutorial，advanced 命中被算错 | 评估口径 |
-| BC-05 | TODO | g09 答案内容正确，但只引用 `[1] simple-oauth2`，没引用 `oauth2-jwt` | 引用准确率 |
+| BC-05 | 已修复（重试） | g09 答案内容正确，但只引用 `[1] simple-oauth2`，没引用 `oauth2-jwt` | 引用准确率 |
 | BC-06 | 已修复（策略） | rerank 曾把版本题 v01 从 rank 1 挤到 rank 6 | Recall@5 |
 | BC-07 | 已放弃（策略） | hybrid 不加 dense-first guard 时 MRR 低于 dense | 检索质量 |
-| BC-08 | TODO | g04 BackgroundTasks 答案正确但没有引用 | 引用完整率 |
-| BC-09 | TODO | g08 HTTPS/TLS 答案正确但没有引用 | 引用完整率 |
-| BC-10 | TODO | g15 0.100.0 版本题没召回 release-notes | 版本检索 |
-| BC-11 | TODO | g16 regex→pattern 答案正确但没有引用 | 引用完整率 |
+| BC-08 | 已修复（重试） | g04 BackgroundTasks 答案正确但没有引用 | 引用完整率 |
+| BC-09 | 已修复（重试） | g08 HTTPS/TLS 答案正确但没有引用 | 引用完整率 |
+| BC-10 | 部分修复 | g15 0.100.0 版本题路由到 release-notes，但索引只保留最近 20 版 | 版本检索 |
+| BC-11 | 已修复（重试） | g16 regex→pattern 答案正确但没有引用 | 引用完整率 |
+| BC-12 | TODO | g03 路径/查询参数答案正确但引用没命中期望 URL | 引用选择 |
+| BC-13 | TODO | g22 装饰器/参数区别答案正确但引用指向相邻文档 | 引用选择 |
 
 当前整体基线：
 
 - 检索：30 条，Recall@5 = 1.0，Recall@1 = 0.933，MRR = 0.967
-- 生成：24 条，20 pass，citation_validity = 0.9，refusal_accuracy = 1.0
+- 生成：24 条，21 pass，citation_validity = 1.0，citation_hit = 0.9，refusal_accuracy = 1.0
 
 这些不是“完全没召回”，而是**排序、引用选择或标注问题**。
 
@@ -219,7 +221,7 @@ citation_hit: false
 
 ### 状态
 
-TODO。已加入生成评估 `g09`。
+已修复：prompt 强化 + 无引用重试后，g09 在 24 条评估中通过。
 
 ---
 
@@ -320,7 +322,7 @@ citation_hit: false
 
 ### 状态
 
-TODO。已记录 g04。
+已修复：`generate_answer` / `/chat` 在无有效引用时带纠正 prompt 重试一次；g04 已通过。
 
 ---
 
@@ -341,7 +343,7 @@ citation_hit: false
 
 ### 干预候选
 
-同 BC-08。
+已修复：同 BC-08 的引用重试；g08 已通过。
 
 ---
 
@@ -367,7 +369,7 @@ source_recall: false
 
 ### 状态
 
-TODO。已记录 g15。
+部分修复：`route_doc_type` 已把版本号问题强制路由到 `release_notes`；但当前索引只保留最近 20 个版本，0.100.0 不在其中，模型正确拒答而不是编造。完整修复需要历史 collection。
 
 ---
 
@@ -388,7 +390,50 @@ citation_hit: false
 
 ### 干预候选
 
-同 BC-08。
+已修复：同 BC-08 的引用重试；g16 已通过。
+
+---
+
+## BC-12：g03 引用没命中期望 URL
+
+```text
+query: 怎么定义带路径参数和查询参数的 GET 接口？
+source_recall: true
+citation_hit: false
+answer: 内容正确
+```
+
+### 根因
+
+- 检索到了 tutorial/path-params 和 query-params
+- 生成引用了相邻/泛化片段，citation_hit 只看期望 URL
+- 不是知识错误，是引用选择问题
+
+### 干预候选
+
+同 BC-05：更严格的 citation 选择 prompt，或按句子做来源匹配。
+
+---
+
+## BC-13：g22 装饰器 vs 参数引用偏移
+
+```text
+query: Depends 在路径操作装饰器里和函数参数里有什么区别？
+source_recall: true
+citation_hit: false
+answer: 内容正确
+```
+
+### 根因
+
+- 期望 `dependencies-in-path-operation-decorators/`
+- 回答引用了 `tutorial/dependencies/` 的相邻片段
+- 语义上相邻，但引用不是最精确页面
+
+### 干预候选
+
+- cross-encoder 重排后，引用选择仍有偏移
+- 需要句子级 citation attribution，而不是只做文档级引用
 
 ---
 

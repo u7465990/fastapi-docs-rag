@@ -6,7 +6,7 @@
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense + BM25 hybrid retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估、24 条生成/引用/拒答评估、cross-encoder 可选 rerank、manifest 增量索引、查询改写、低分拒答、上下文预算/去重、引用校验、CI 和 HTTP 限流/额度锁；下一步是部署硬化与模型缓存验证。
+> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense + BM25 hybrid retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估、24 条生成/引用/拒答评估（21 pass）、cross-encoder 可选 rerank、精确答案缓存、版本意图路由、manifest 增量索引、查询改写、低分拒答、上下文预算/去重、引用重试、CI 和 HTTP 限流/额度锁；下一步是 async 化、RAGAS 与模型缓存验证。
 
 ## 数据源
 
@@ -175,13 +175,17 @@ RERANKER_THREADS=4
 ```dotenv
 RETRIEVAL_MIN_SCORE=0.35
 MAX_CONTEXT_TOKENS=8000
+CACHE_ENABLED=true
+CACHE_TTL_SECONDS=3600
 ```
 
 - 多轮追问如果是短句/含“它、这个、上述”等指代，会把上一轮用户问题拼进检索 query；不改写回答 query。
 - 检索 Top-1 dense 分数低于 `RETRIEVAL_MIN_SCORE` 时直接拒答；cross-encoder 可用时改用 `RERANK_MIN_SCORE` 作为语义 OOD 门槛。
 - 上下文按 URL 最多保留 2 条，并按 `MAX_CONTEXT_TOKENS` 截断，避免同一页面刷满 prompt。
-- 生成后检查 `[n]`：无效编号、无引用、弱引用支撑会进入 `citation_warnings`；SSE 通过 `warning` 事件发送，前端展示提示。
-- 这是启发式校验，不等于语义 entailment；g09 这类“内容对但引用错”仍需更强 citation/LLM judge。
+- 生成后检查 `[n]`：无效编号、无引用、弱引用支撑会进入 `citation_warnings`；无有效引用会自动重试一次。
+- 版本号/版本关键词问题自动路由到 `doc_type=release_notes`；显式 `doc_type` 优先。
+- 答案缓存 key 包含 `source_ref + build_id + model + embedding + prompt_version + 请求参数`，精确 query 命中；默认 TTL 1 小时。
+- 这是启发式校验，不等于语义 entailment；g03/g22 这类“内容对但引用不是最精确页面”仍需句子级 attribution。
 
 ### 多轮会话
 

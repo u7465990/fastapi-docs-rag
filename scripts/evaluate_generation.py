@@ -22,6 +22,7 @@ from fastapi_docs_rag.retrieval.bm25 import BM25Index  # noqa: E402
 from fastapi_docs_rag.retrieval.dense import DenseRetriever, SearchHit  # noqa: E402
 from fastapi_docs_rag.retrieval.hybrid import HybridRetriever  # noqa: E402
 from fastapi_docs_rag.retrieval.rerank import LexicalReranker  # noqa: E402
+from fastapi_docs_rag.retrieval.router import route_doc_type  # noqa: E402
 
 DEFAULT_GOLDEN = Path("data/eval/generation_set.jsonl")
 CITATION_RE = re.compile(r"\[(\d+)\]")
@@ -119,7 +120,11 @@ def main() -> None:
                 hits: list[SearchHit] = (
                     []
                     if force_no_context
-                    else retriever.search(question, limit=settings.final_top_k)
+                    else retriever.search(
+                        question,
+                        limit=settings.final_top_k,
+                        doc_type=route_doc_type(question, case.get("doc_type")),
+                    )
                 )
                 answer = generate_answer(question, hits, chat_client)
                 error = None

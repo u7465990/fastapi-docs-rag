@@ -75,6 +75,25 @@ def test_no_hits_refuses_without_calling_llm() -> None:
     assert client.messages == []
 
 
+def test_missing_citation_triggers_one_retry() -> None:
+    class RetryClient:
+        model = "retry-chat"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def complete(self, messages):
+            self.calls += 1
+            return "先这样回答，没有引用。" if self.calls == 1 else "带引用的回答 [1]"
+
+    client = RetryClient()
+
+    answer = generate_answer("Depends 怎么用？", [_hit()], client)  # type: ignore[arg-type]
+
+    assert answer == "带引用的回答 [1]"
+    assert client.calls == 2
+
+
 def test_follow_up_rewrite_uses_previous_user_question() -> None:
     history = [
         {"role": "user", "content": "on_event 怎么迁移？"},

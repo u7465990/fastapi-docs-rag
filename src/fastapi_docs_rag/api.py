@@ -18,6 +18,12 @@ from qdrant_client import QdrantClient
 
 from fastapi_docs_rag import __version__
 from fastapi_docs_rag.config import Settings, get_settings
+from fastapi_docs_rag.generation.cache import (
+    AnswerCache,
+    index_identity,
+    make_answer_cache,
+    make_cache_key,
+)
 from fastapi_docs_rag.generation.chat import (
     REFUSAL,
     build_messages,
@@ -55,6 +61,7 @@ from fastapi_docs_rag.retrieval.rerank import (
     LexicalReranker,
     Reranker,
 )
+from fastapi_docs_rag.retrieval.router import route_doc_type
 from fastapi_docs_rag.security import (
     RateLimiter,
     RateLimitExceeded,
@@ -323,6 +330,83 @@ def _get_session_store() -> SessionStore:
     return make_session_store(get_settings())
 
 
+@lru_cache(maxsize=1)
+def _get_answer_cache() -> AnswerCache:
+    return make_answer_cache(get_settings())
+
+
+def _cache_options(payload: ChatRequest) -> dict[str, Any]:
+    return {
+        "limit": payload.limit,
+        "doc_type": route_doc_type(payload.query, payload.doc_type),
+        "docs_version": payload.docs_version,
+        "include_deprecated": payload.include_deprecated,
+        "include_meta": payload.include_meta,
+        "include_reference": payload.include_reference,
+    }
+
+
+def _cache_key_for(
+    payload: ChatRequest,
+    history: list[dict[str, str]],
+) -> str:
+    return make_cache_key(
+        query=payload.query,
+        history=history,
+        identity=index_identity(),
+        settings=get_settings(),
+        options=_cache_options(payload),
+    )
+
+
+def _cache_lookup(
+    payload: ChatRequest,
+    history: list[dict[str, str]],
+) -> tuple[str, dict[str, Any]] | None:
+    settings = get_settings()
+    if not settings.cache_enabled:
+        return None
+    key = _cache_key_for(payload, history)
+    cached = _get_answer_cache().get(key)
+    return (key, cached) if cached is not None else None
+
+
+def _cached_response(
+    payload: ChatRequest,
+    cached: dict[str, Any],
+) -> ChatResponse:
+    return ChatResponse(
+        query=payload.query,
+        answer=str(cached.get("answer", "")),
+        model=str(cached.get("model", "")),
+        sources=[
+            ChatSource.model_validate(source)
+            for source in cached.get("sources", [])
+        ],
+        session_id=payload.session_id,
+        citation_warnings=list(cached.get("citation_warnings", [])),
+    )
+
+
+def _cache_store(
+    key: str,
+    *,
+    answer: str,
+    model: str,
+    sources: list[ChatSource],
+    warnings: list[str],
+) -> None:
+    _get_answer_cache().set(
+        key,
+        {
+            "answer": answer,
+            "model": model,
+            "sources": [source.model_dump() for source in sources],
+            "citation_warnings": warnings,
+        },
+    )
+
+
 def _load_history(session_id: str | None) -> list[dict[str, str]]:
     if not session_id:
         return []
@@ -400,7 +484,7 @@ def search(http_request: Request, payload: SearchRequest) -> SearchResponse:
         hits: list[SearchHit] = retriever.search(
             payload.query,
             limit=payload.limit,
-            doc_type=payload.doc_type,
+            doc_type=route_doc_type(payload.query, payload.doc_type),
             docs_version=payload.docs_version,
             include_deprecated=payload.include_deprecated,
             include_meta=payload.include_meta,
@@ -427,15 +511,19 @@ def search(http_request: Request, payload: SearchRequest) -> SearchResponse:
 def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
     """Retrieve context, generate a grounded answer, and return cited sources."""
     _guard_http(http_request, "chat")
-    _reserve_embedding(payload.query)
     history = _load_history(payload.session_id)
+    cached = _cache_lookup(payload, history)
+    if cached is not None:
+        return _cached_response(payload, cached[1])
+    _reserve_embedding(payload.query)
+    cache_key = _cache_key_for(payload, history) if get_settings().cache_enabled else None
     retrieval_query = rewrite_query(payload.query, history)
     try:
         retriever = _get_retriever()
         hits: list[SearchHit] = retriever.search(
             retrieval_query,
             limit=payload.limit,
-            doc_type=payload.doc_type,
+            doc_type=route_doc_type(payload.query, payload.doc_type),
             docs_version=payload.docs_version,
             include_deprecated=payload.include_deprecated,
             include_meta=payload.include_meta,
@@ -484,6 +572,24 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
     try:
         client = _get_chat_client()
         answer = client.complete(messages)
+        citation_check = check_citations(answer, hits)
+        if citation_check.citations == 0 or citation_check.invalid_indices:
+            retry_messages = [
+                *messages,
+                {"role": "assistant", "content": answer},
+                {
+                    "role": "user",
+                    "content": (
+                        "上一次回答缺少有效引用。请重新回答，并为每个关键结论"
+                        "标注本轮上下文中的 [n]；不要编造编号。"
+                    ),
+                },
+            ]
+            retry_answer = client.complete(retry_messages)
+            retry_check = check_citations(retry_answer, hits)
+            if retry_check.citations > citation_check.citations:
+                answer = retry_answer
+                citation_check = retry_check
     except Exception as exc:  # noqa: BLE001 - provider failures become 503
         raise HTTPException(
             status_code=503,
@@ -491,12 +597,20 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
         ) from exc
 
     _save_turn(payload.session_id, payload.query, answer)
-    citation_check = check_citations(answer, hits)
+    sources = _sources_for_hits(hits)
+    if cache_key is not None:
+        _cache_store(
+            cache_key,
+            answer=answer,
+            model=client.model,
+            sources=sources,
+            warnings=citation_check.warnings,
+        )
     return ChatResponse(
         query=payload.query,
         answer=answer,
         model=client.model,
-        sources=_sources_for_hits(hits),
+        sources=sources,
         session_id=payload.session_id,
         citation_warnings=citation_check.warnings,
     )
@@ -506,15 +620,49 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
 def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingResponse:
     """SSE version of /api/v1/chat: sources first, then token chunks."""
     _guard_http(http_request, "chat")
-    _reserve_embedding(payload.query)
     history = _load_history(payload.session_id)
+    cached = _cache_lookup(payload, history)
+    if cached is not None:
+        cached_data = cached[1]
+        cached_sources = [
+            ChatSource.model_validate(source)
+            for source in cached_data.get("sources", [])
+        ]
+        cached_warnings = list(cached_data.get("citation_warnings", []))
+
+        def cached_stream() -> Iterator[str]:
+            yield _sse(
+                "sources",
+                {"sources": [source.model_dump() for source in cached_sources]},
+            )
+            yield _sse("token", {"text": str(cached_data.get("answer", ""))})
+            for warning in cached_warnings:
+                yield _sse("warning", {"message": warning})
+            yield _sse("usage", {"input_tokens": None, "output_tokens": None})
+            yield _sse(
+                "done",
+                {
+                    "model": str(cached_data.get("model", "")),
+                    "session_id": payload.session_id,
+                    "citation_warnings": cached_warnings,
+                    "cache_hit": True,
+                },
+            )
+
+        return StreamingResponse(
+            cached_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+    _reserve_embedding(payload.query)
+    cache_key = _cache_key_for(payload, history) if get_settings().cache_enabled else None
     retrieval_query = rewrite_query(payload.query, history)
     try:
         retriever = _get_retriever()
         hits: list[SearchHit] = retriever.search(
             retrieval_query,
             limit=payload.limit,
-            doc_type=payload.doc_type,
+            doc_type=route_doc_type(payload.query, payload.doc_type),
             docs_version=payload.docs_version,
             include_deprecated=payload.include_deprecated,
             include_meta=payload.include_meta,
@@ -598,6 +746,14 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
         answer = "".join(parts)
         _save_turn(payload.session_id, payload.query, answer)
         citation_check = check_citations(answer, hits)
+        if cache_key is not None:
+            _cache_store(
+                cache_key,
+                answer=answer,
+                model=client.model,
+                sources=sources,
+                warnings=citation_check.warnings,
+            )
         for warning in citation_check.warnings:
             yield _sse("warning", {"message": warning})
         # The OpenAI-compatible stream does not expose usage in all providers;

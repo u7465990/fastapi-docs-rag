@@ -17,6 +17,8 @@ def _disable_http_security(monkeypatch):
     """Keep endpoint tests independent of Redis; security has its own tests."""
     monkeypatch.setattr(api, "_guard_http", lambda *args, **kwargs: None)
     monkeypatch.setattr(api, "_reserve_embedding", lambda query: None)
+    monkeypatch.setattr(api, "_cache_lookup", lambda *args, **kwargs: None)
+    monkeypatch.setattr(api, "_cache_store", lambda *args, **kwargs: None)
 
 
 class FakeChatClient:
