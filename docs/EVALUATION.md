@@ -199,6 +199,34 @@ latency_ms: p50=184 p95=332 max=432
 - Recall 没有下降，MRR 有小幅提升。
 - 这是 **lexical rerank**，不是 cross-encoder；不能宣称“语义精排”。
 
+### 3.5 小 cross-encoder 实测
+
+模型：
+
+```text
+Xenova/ms-marco-MiniLM-L-6-v2
+```
+
+结果：
+
+```text
+Recall@1: 0.933
+Recall@5: 1.000
+MRR: 0.967
+p50: 168ms
+p95: 332ms
+max: 39.3s（含首次模型下载/重试）
+```
+
+结论：
+
+- 与 lexical rerank 的 MRR 0.967 相同
+- 30 条上没有质量提升
+- 小模型的价值是把 cross-encoder 链路真正跑通，并降低 CPU 成本
+- 不能声称“cross-encoder 提升 MRR”
+
+首次冷启动会联网校验模型，可能产生几十秒重试；模型缓存预热后 p95 约 332ms。
+
 ### 运行
 
 ```powershell
@@ -302,17 +330,18 @@ latency max: 6635ms
 
 - 30 条中文问题、英文文档，dense baseline 的 Recall@5 = 1.0。
 - hybrid + lexical rerank 把 MRR 从 0.953 提到 0.967，Recall 不变。
-- 14 条生成评估 13 条通过；唯一失败是 g09 引用选错，不是检索没召回。
+- 小 cross-encoder 在 30 条上 MRR 仍为 0.967，没有额外提升；只能作为链路验证。
+- 24 条生成评估 21 条通过；剩余失败是 g03/g22 引用选择、g15 缺历史版本数据。
 - reference 默认过滤和 golden 标注修正是两处真实改进。
 - p50/p95 检索延迟在本地 8 并发测试中仍低于 500ms（见 `WORKLOG_2026-11-14.md`）。
 
 ### 局限
 
-- 30 条太少，且问题是从文档主题手工构造的，偏“可答”
-- 没有无答案题、没有硬负例、没有代码符号题、没有真正的版本差异题
+- 30 条检索集仍偏小，且问题是从文档主题手工构造的，偏“可答”
+- 生成集已有无答案/硬负例/代码/版本题，但只有 24 条
 - Recall@5 = 1.0 不代表生产质量，只代表这 30 条都能在前 5 找到
-- 没有评估 LLM 答案、引用准确率、拒答
-- 没有评估 reference 之外的 meta/release_notes 干扰
+- 引用选择仍有 g03/g22 失败，说明 citation attribution 不够精确
+- g15 暴露历史版本数据缺失，不是单纯路由问题
 
 ### 下一步
 

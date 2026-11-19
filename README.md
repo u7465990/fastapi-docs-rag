@@ -159,11 +159,13 @@ uv sync --extra dev --extra rerank
 
 ```dotenv
 RERANKER_PROVIDER=fastembed
-RERANKER_MODEL=BAAI/bge-reranker-base
+RERANKER_MODEL=Xenova/ms-marco-MiniLM-L-6-v2
 RERANKER_CACHE_DIR=data/cache/fastembed
 RERANKER_THREADS=4
 ```
 
+- 默认用小模型 `Xenova/ms-marco-MiniLM-L-6-v2`（约 80MB，英文 cross-encoder），适合 CPU/demo
+- 中文 query 质量优先时换 `BAAI/bge-reranker-v2-m3-int8`（约 570MB，多语言）
 - 只 rerank top `RERANK_TOP_K` 个候选
 - 模型懒加载，缓存在 `data/cache/fastembed`
 - 模型/依赖不可用时自动回退 lexical rerank，不阻断问答

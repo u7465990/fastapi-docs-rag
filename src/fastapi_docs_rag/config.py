@@ -60,7 +60,9 @@ class Settings(BaseSettings):
 
     # Reranker
     reranker_provider: str = "fastembed"
-    reranker_model: str = "BAAI/bge-reranker-base"
+    # Small English cross-encoder for CPU/demo; use
+    # BAAI/bge-reranker-v2-m3-int8 for better Chinese-query reranking.
+    reranker_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
     reranker_cache_dir: Path = Path("data/cache/fastembed")
     reranker_threads: int = 4
     rerank_min_score: float = 0.0

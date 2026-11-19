@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目状态
 
-**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/fastapi_docs_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense + BM25 hybrid retrieval、`/api/v1/search`、`/api/v1/chat`、`/api/v1/chat/stream` SSE、多轮会话、前端聊天页、Docker API、Nginx 静态托管、30 条 golden set 检索评估、24 条生成/引用/拒答评估（21 pass）、fastembed cross-encoder rerank（lexical fallback）、版本感知精确答案缓存、版本意图路由、manifest 增量索引、查询改写/低分拒答/上下文预算/引用重试、GitHub Actions CI、HTTP 限流/access token/embedding 额度、request_id/JSON 日志/`/metrics` 已实现；async 化、RAGAS、历史多 collection 检索、cross-encoder 模型缓存验证尚未完成。
+**Phase 1 进行中**：仓库已有 `pyproject.toml` + `uv.lock`、`src/fastapi_docs_rag/`（config / api / cli / ingestion.parser / ingestion.source / indexing.chunker / indexing.embedder / indexing.indexer / retrieval.dense / generation.llm / generation.chat）、`apps/web/`（Vite + React 最小聊天页）、`docker/Dockerfile.api`、`tests/unit/`、`Makefile`、`docker-compose.yml`；环境用 uv 管理（见“计划中的常用命令”）。dense + BM25 hybrid retrieval、`/api/v1/search`、`/api/v1/chat`、`/api/v1/chat/stream` SSE、多轮会话、前端聊天页、Docker API、Nginx 静态托管、30 条 golden set 检索评估、24 条生成/引用/拒答评估（21 pass）、fastembed 小模型 cross-encoder rerank（`Xenova/ms-marco-MiniLM-L-6-v2`，lexical fallback）、版本感知精确答案缓存、版本意图路由、manifest 增量索引、查询改写/低分拒答/上下文预算/引用重试、GitHub Actions CI、HTTP 限流/access token/embedding 额度、request_id/JSON 日志/`/metrics` 已实现；async 化、RAGAS、历史多 collection 检索、cross-encoder 模型缓存验证尚未完成。
 
 FastAPI 官方文档源已拉取到 `data/raw/fastapi/`（被 `.gitignore` 排除，不进入仓库；当前 C 工作区是**文件快照，不含 `.git`**。此时 `source_ref` 用 `DOCS_SOURCE_REF` 或上一版 manifest 继承；恢复 Git 后会自动读取 HEAD）：
 
@@ -182,7 +182,8 @@ uv run --no-sync pytest tests/unit/test_chunker.py::test_code_block_is_never_spl
 - `retrieval/bm25.py`：内存 BM25，索引 Qdrant child payload；中文纯 query 不注入英文词典，避免噪声。
 - `retrieval/hybrid.py`：dense top 20 + BM25 top 20，加权 RRF；默认 dense_weight=2.0、bm25_weight=0.5。
 - `retrieval/rerank.py`：`CrossEncoderReranker`（FastEmbed ONNX，可选）+ `LexicalReranker` fallback。
-- 默认 `RETRIEVAL_MODE=hybrid`、`RERANK_ENABLED=true`、`RERANKER_PROVIDER=fastembed`；模型不可用时回退 lexical。
+- 默认 `RETRIEVAL_MODE=hybrid`、`RERANK_ENABLED=true`、`RERANKER_PROVIDER=fastembed`、`RERANKER_MODEL=Xenova/ms-marco-MiniLM-L-6-v2`；模型不可用时回退 lexical。
+- 小模型是英文 cross-encoder；中文 query 质量优先时换 `BAAI/bge-reranker-v2-m3-int8`。
 - 30 条 lexical-rerank 评估 MRR 0.953 -> 0.967；cross-encoder 模型缓存/真实分数尚未在本机验证。
 - 额外依赖通过 `uv sync --extra dev --extra rerank` 安装，不要拉整套 `rag` extra。
 
