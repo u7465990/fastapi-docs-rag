@@ -170,6 +170,7 @@ RERANKER_THREADS=4
 - 模型懒加载，缓存在 `data/cache/fastembed`
 - 模型/依赖不可用时自动回退 lexical rerank，不阻断问答
 - Docker API 使用 `.[rerank]` 安装可选的 cross-encoder 依赖
+- `docker-compose.yml` 把 `./data/cache/fastembed` 挂到容器，重建容器不丢模型
 - `RERANK_MIN_SCORE` 可作为语义 OOD 阈值；具体值需用真实模型校准
 
 ### RAG 质量控制
