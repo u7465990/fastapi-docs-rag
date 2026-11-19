@@ -115,6 +115,10 @@ class Settings(BaseSettings):
     cache_enabled: bool = True
     cache_ttl_seconds: int = 3600
 
+    # Concurrency
+    llm_max_concurrency: int = 8
+    retrieval_max_concurrency: int = 16
+
     # API
     admin_api_key: str = ""
     api_access_token: str = ""

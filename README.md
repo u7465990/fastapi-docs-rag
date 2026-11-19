@@ -6,7 +6,7 @@
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense + BM25 hybrid retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估、24 条生成/引用/拒答评估（21 pass）、cross-encoder 可选 rerank、精确答案缓存、版本意图路由、manifest 增量索引、查询改写、低分拒答、上下文预算/去重、引用重试、CI 和 HTTP 限流/额度锁；下一步是 async 化、RAGAS 与模型缓存验证。
+> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense + BM25 hybrid retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估、24 条生成/引用/拒答评估（21 pass）、cross-encoder 可选 rerank、精确答案缓存、版本意图路由、manifest 增量索引、查询改写、低分拒答、上下文预算/去重、引用重试、async API/SSE、并发压测报告、CI 和 HTTP 限流/额度锁；下一步是 RAGAS 与历史 collection 检索。
 
 ## 数据源
 
@@ -148,6 +148,23 @@ sources -> token* -> usage -> done
 - 生成异常会发 `error`，不会静默截断
 
 前端用 `fetch` + `ReadableStream` 解析，不能用原生 `EventSource`（它只支持 GET）。Nginx 的 `/api` 已关闭 `proxy_buffering`，否则流会被整段缓冲。
+
+### 并发与延迟
+
+`/api/v1/search`、`/api/v1/chat`、`/api/v1/chat/stream` 已改为 async；阻塞的检索/embedding/Redis 操作通过线程池 offload，LLM 使用 `httpx.AsyncClient`。SSE 为 async generator。
+
+本地 Docker 实测：
+
+```text
+检索 20 并发 p95: 496ms -> 533ms（无明显提升，瓶颈在 embedding/Qdrant）
+Chat 5 并发 p95: 6.34s -> 5.42s
+SSE 5 并发 TTFT p95: 1.10s
+Chat 10 并发: 1.16 rps, 0 errors
+```
+
+完整数据和限制见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)。
+
+不要声称“支持 100 并发”；目前只验证到 10 并发 chat、20 并发检索。
 
 ### Cross-encoder rerank
 

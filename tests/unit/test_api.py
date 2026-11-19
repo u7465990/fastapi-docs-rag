@@ -24,11 +24,11 @@ def _disable_http_security(monkeypatch):
 class FakeChatClient:
     model = "fake-chat"
 
-    def complete(self, messages):
+    async def complete(self, messages):
         assert messages
         return "答案 [1]"
 
-    def stream(self, messages):
+    async def stream(self, messages):
         assert messages
         yield "答案"
         yield " [1]"
@@ -67,7 +67,7 @@ class CapturingChatClient(FakeChatClient):
     def __init__(self) -> None:
         self.calls: list[list[dict[str, str]]] = []
 
-    def complete(self, messages):
+    async def complete(self, messages):
         self.calls.append(list(messages))
         return "答案 [1]"
 

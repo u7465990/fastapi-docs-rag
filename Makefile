@@ -1,4 +1,4 @@
-.PHONY: install install-rag dev up down logs lint format test test-unit check-parser check-chunker check-providers ingest update-index diff-report history-report rebuild-index smoke-search load-search evaluate evaluate-generation web-build
+.PHONY: install install-rag dev up down logs lint format test test-unit check-parser check-chunker check-providers ingest update-index diff-report history-report rebuild-index smoke-search load-search load-chat evaluate evaluate-generation web-build
 
 UV ?= uv
 # 依赖由 make install 同步；运行时不再 sync，避免把 rag extra 卸掉
@@ -67,6 +67,9 @@ smoke-search:
 
 load-search:
 	$(RUN) python scripts/load_search.py
+
+load-chat:
+	$(RUN) python scripts/load_chat.py
 
 evaluate:
 	$(RUN) python scripts/evaluate.py

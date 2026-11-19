@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from functools import lru_cache
 from typing import Any
 
+import anyio
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,7 +34,10 @@ from fastapi_docs_rag.generation.chat import (
     rewrite_query,
     select_context_hits,
 )
-from fastapi_docs_rag.generation.llm import ChatClient, make_chat_client
+from fastapi_docs_rag.generation.llm import (
+    AsyncChatClient,
+    make_async_chat_client,
+)
 from fastapi_docs_rag.generation.quota import (
     DailyQuota,
     QuotaExceeded,
@@ -300,8 +304,40 @@ def _get_retriever() -> DenseRetriever | HybridRetriever:
 
 
 @lru_cache(maxsize=1)
-def _get_chat_client() -> ChatClient:
-    return make_chat_client(get_settings())
+def _get_chat_client() -> AsyncChatClient:
+    return make_async_chat_client(get_settings())
+
+
+_SETTINGS = get_settings()
+_LLM_SEMAPHORE = asyncio.Semaphore(_SETTINGS.llm_max_concurrency)
+_RETRIEVAL_SEMAPHORE = asyncio.Semaphore(_SETTINGS.retrieval_max_concurrency)
+
+
+def _retrieval_hits(
+    payload: ChatRequest | SearchRequest,
+    history: list[dict[str, str]] | None = None,
+) -> list[SearchHit]:
+    """Blocking retrieval, executed in a worker thread by async routes."""
+    settings = get_settings()
+    query = payload.query
+    if isinstance(payload, ChatRequest):
+        query = rewrite_query(
+            payload.query,
+            history if history is not None else _load_history(payload.session_id),
+        )
+    retriever = _get_retriever()
+    hits = retriever.search(
+        query,
+        limit=payload.limit,
+        doc_type=route_doc_type(payload.query, payload.doc_type),
+        docs_version=payload.docs_version,
+        include_deprecated=payload.include_deprecated,
+        include_meta=payload.include_meta,
+        include_reference=payload.include_reference,
+    )
+    if isinstance(payload, ChatRequest):
+        hits = select_context_hits(hits, max_tokens=settings.max_context_tokens)
+    return hits
 
 
 @lru_cache(maxsize=1)
@@ -390,7 +426,6 @@ def _cached_response(
 
 def _cache_store(
     key: str,
-    *,
     answer: str,
     model: str,
     sources: list[ChatSource],
@@ -462,6 +497,10 @@ def _reserve_embedding(query: str) -> None:
     metrics.record_tokens("embedding", estimated)
 
 
+def _reserve_llm(tokens: int) -> None:
+    _get_quota_guard().reserve(tokens)
+
+
 def _retrieval_is_confident(hits: list[SearchHit]) -> bool:
     if not hits:
         return False
@@ -475,21 +514,13 @@ def _retrieval_is_confident(hits: list[SearchHit]) -> bool:
 
 
 @app.post("/api/v1/search", response_model=SearchResponse)
-def search(http_request: Request, payload: SearchRequest) -> SearchResponse:
-    """Dense retrieval over the current index; no generation."""
-    _guard_http(http_request, "search")
-    _reserve_embedding(payload.query)
+async def search(http_request: Request, payload: SearchRequest) -> SearchResponse:
+    """Async retrieval over the current index; no generation."""
+    await anyio.to_thread.run_sync(_guard_http, http_request, "search")
+    await anyio.to_thread.run_sync(_reserve_embedding, payload.query)
     try:
-        retriever = _get_retriever()
-        hits: list[SearchHit] = retriever.search(
-            payload.query,
-            limit=payload.limit,
-            doc_type=route_doc_type(payload.query, payload.doc_type),
-            docs_version=payload.docs_version,
-            include_deprecated=payload.include_deprecated,
-            include_meta=payload.include_meta,
-            include_reference=payload.include_reference,
-        )
+        async with _RETRIEVAL_SEMAPHORE:
+            hits = await anyio.to_thread.run_sync(_retrieval_hits, payload)
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - dependency failures become 503
@@ -508,27 +539,22 @@ def search(http_request: Request, payload: SearchRequest) -> SearchResponse:
 
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
-def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
+async def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
     """Retrieve context, generate a grounded answer, and return cited sources."""
-    _guard_http(http_request, "chat")
-    history = _load_history(payload.session_id)
-    cached = _cache_lookup(payload, history)
+    await anyio.to_thread.run_sync(_guard_http, http_request, "chat")
+    history = await anyio.to_thread.run_sync(_load_history, payload.session_id)
+    cached = await anyio.to_thread.run_sync(_cache_lookup, payload, history)
     if cached is not None:
         return _cached_response(payload, cached[1])
-    _reserve_embedding(payload.query)
+    await anyio.to_thread.run_sync(_reserve_embedding, payload.query)
     cache_key = _cache_key_for(payload, history) if get_settings().cache_enabled else None
-    retrieval_query = rewrite_query(payload.query, history)
     try:
-        retriever = _get_retriever()
-        hits: list[SearchHit] = retriever.search(
-            retrieval_query,
-            limit=payload.limit,
-            doc_type=route_doc_type(payload.query, payload.doc_type),
-            docs_version=payload.docs_version,
-            include_deprecated=payload.include_deprecated,
-            include_meta=payload.include_meta,
-            include_reference=payload.include_reference,
-        )
+        async with _RETRIEVAL_SEMAPHORE:
+            hits = await anyio.to_thread.run_sync(
+                _retrieval_hits,
+                payload,
+                history,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - dependency failures become 503
@@ -538,10 +564,6 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
         ) from exc
 
     settings = get_settings()
-    hits = select_context_hits(
-        hits,
-        max_tokens=settings.max_context_tokens,
-    )
     if not _retrieval_is_confident(hits):
         hits = []
     if not hits:
@@ -558,7 +580,7 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
     max_output = min(settings.llm_max_tokens, settings.llm_max_tokens_cap)
     estimated_llm = estimate_chat_tokens(messages, max_output)
     try:
-        _get_quota_guard().reserve(estimated_llm)
+        await anyio.to_thread.run_sync(_reserve_llm, estimated_llm)
     except QuotaExceeded as exc:
         metrics.record_quota_rejection("llm")
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -571,40 +593,47 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
 
     try:
         client = _get_chat_client()
-        answer = client.complete(messages)
-        citation_check = check_citations(answer, hits)
-        if citation_check.citations == 0 or citation_check.invalid_indices:
-            retry_messages = [
-                *messages,
-                {"role": "assistant", "content": answer},
-                {
-                    "role": "user",
-                    "content": (
-                        "上一次回答缺少有效引用。请重新回答，并为每个关键结论"
-                        "标注本轮上下文中的 [n]；不要编造编号。"
-                    ),
-                },
-            ]
-            retry_answer = client.complete(retry_messages)
-            retry_check = check_citations(retry_answer, hits)
-            if retry_check.citations > citation_check.citations:
-                answer = retry_answer
-                citation_check = retry_check
+        async with _LLM_SEMAPHORE:
+            answer = await client.complete(messages)
+            citation_check = check_citations(answer, hits)
+            if citation_check.citations == 0 or citation_check.invalid_indices:
+                retry_messages = [
+                    *messages,
+                    {"role": "assistant", "content": answer},
+                    {
+                        "role": "user",
+                        "content": (
+                            "上一次回答缺少有效引用。请重新回答，并为每个关键结论"
+                            "标注本轮上下文中的 [n]；不要编造编号。"
+                        ),
+                    },
+                ]
+                retry_answer = await client.complete(retry_messages)
+                retry_check = check_citations(retry_answer, hits)
+                if retry_check.citations > citation_check.citations:
+                    answer = retry_answer
+                    citation_check = retry_check
     except Exception as exc:  # noqa: BLE001 - provider failures become 503
         raise HTTPException(
             status_code=503,
             detail="generation service unavailable",
         ) from exc
 
-    _save_turn(payload.session_id, payload.query, answer)
+    await anyio.to_thread.run_sync(
+        _save_turn,
+        payload.session_id,
+        payload.query,
+        answer,
+    )
     sources = _sources_for_hits(hits)
     if cache_key is not None:
-        _cache_store(
+        await anyio.to_thread.run_sync(
+            _cache_store,
             cache_key,
-            answer=answer,
-            model=client.model,
-            sources=sources,
-            warnings=citation_check.warnings,
+            answer,
+            client.model,
+            sources,
+            citation_check.warnings,
         )
     return ChatResponse(
         query=payload.query,
@@ -617,11 +646,14 @@ def chat(http_request: Request, payload: ChatRequest) -> ChatResponse:
 
 
 @app.post("/api/v1/chat/stream")
-def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingResponse:
-    """SSE version of /api/v1/chat: sources first, then token chunks."""
-    _guard_http(http_request, "chat")
-    history = _load_history(payload.session_id)
-    cached = _cache_lookup(payload, history)
+async def chat_stream(
+    http_request: Request,
+    payload: ChatRequest,
+) -> StreamingResponse:
+    """Async SSE: sources first, then token chunks."""
+    await anyio.to_thread.run_sync(_guard_http, http_request, "chat")
+    history = await anyio.to_thread.run_sync(_load_history, payload.session_id)
+    cached = await anyio.to_thread.run_sync(_cache_lookup, payload, history)
     if cached is not None:
         cached_data = cached[1]
         cached_sources = [
@@ -630,7 +662,7 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
         ]
         cached_warnings = list(cached_data.get("citation_warnings", []))
 
-        def cached_stream() -> Iterator[str]:
+        async def cached_stream() -> AsyncIterator[str]:
             yield _sse(
                 "sources",
                 {"sources": [source.model_dump() for source in cached_sources]},
@@ -654,20 +686,16 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
-    _reserve_embedding(payload.query)
+
+    await anyio.to_thread.run_sync(_reserve_embedding, payload.query)
     cache_key = _cache_key_for(payload, history) if get_settings().cache_enabled else None
-    retrieval_query = rewrite_query(payload.query, history)
     try:
-        retriever = _get_retriever()
-        hits: list[SearchHit] = retriever.search(
-            retrieval_query,
-            limit=payload.limit,
-            doc_type=route_doc_type(payload.query, payload.doc_type),
-            docs_version=payload.docs_version,
-            include_deprecated=payload.include_deprecated,
-            include_meta=payload.include_meta,
-            include_reference=payload.include_reference,
-        )
+        async with _RETRIEVAL_SEMAPHORE:
+            hits = await anyio.to_thread.run_sync(
+                _retrieval_hits,
+                payload,
+                history,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 - dependency failures become 503
@@ -677,10 +705,6 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
         ) from exc
 
     settings = get_settings()
-    hits = select_context_hits(
-        hits,
-        max_tokens=settings.max_context_tokens,
-    )
     if not _retrieval_is_confident(hits):
         hits = []
     headers = {
@@ -688,9 +712,14 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
         "X-Accel-Buffering": "no",
     }
     if not hits:
-        _save_turn(payload.session_id, payload.query, REFUSAL)
+        await anyio.to_thread.run_sync(
+            _save_turn,
+            payload.session_id,
+            payload.query,
+            REFUSAL,
+        )
 
-        def refusal_stream() -> Iterator[str]:
+        async def refusal_stream() -> AsyncIterator[str]:
             yield _sse("sources", {"sources": []})
             yield _sse("token", {"text": REFUSAL})
             yield _sse("usage", {"input_tokens": None, "output_tokens": None})
@@ -709,7 +738,7 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
     max_output = min(settings.llm_max_tokens, settings.llm_max_tokens_cap)
     estimated_llm = estimate_chat_tokens(messages, max_output)
     try:
-        _get_quota_guard().reserve(estimated_llm)
+        await anyio.to_thread.run_sync(_reserve_llm, estimated_llm)
     except QuotaExceeded as exc:
         metrics.record_quota_rejection("llm")
         raise HTTPException(status_code=429, detail=str(exc)) from exc
@@ -730,29 +759,36 @@ def chat_stream(http_request: Request, payload: ChatRequest) -> StreamingRespons
 
     sources = _sources_for_hits(hits)
 
-    def token_stream() -> Iterator[str]:
+    async def token_stream() -> AsyncIterator[str]:
         yield _sse(
             "sources",
             {"sources": [source.model_dump() for source in sources]},
         )
         parts: list[str] = []
         try:
-            for chunk in client.stream(messages):
-                parts.append(chunk)
-                yield _sse("token", {"text": chunk})
+            async with _LLM_SEMAPHORE:
+                async for chunk in client.stream(messages):
+                    parts.append(chunk)
+                    yield _sse("token", {"text": chunk})
         except Exception:  # noqa: BLE001 - errors must be explicit in SSE
             yield _sse("error", {"message": "generation stream failed"})
             return
         answer = "".join(parts)
-        _save_turn(payload.session_id, payload.query, answer)
+        await anyio.to_thread.run_sync(
+            _save_turn,
+            payload.session_id,
+            payload.query,
+            answer,
+        )
         citation_check = check_citations(answer, hits)
         if cache_key is not None:
-            _cache_store(
+            await anyio.to_thread.run_sync(
+                _cache_store,
                 cache_key,
-                answer=answer,
-                model=client.model,
-                sources=sources,
-                warnings=citation_check.warnings,
+                answer,
+                client.model,
+                sources,
+                citation_check.warnings,
             )
         for warning in citation_check.warnings:
             yield _sse("warning", {"message": warning})
