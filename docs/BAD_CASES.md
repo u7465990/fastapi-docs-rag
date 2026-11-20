@@ -19,15 +19,15 @@
 | BC-07 | 已放弃（策略） | hybrid 不加 dense-first guard 时 MRR 低于 dense | 检索质量 |
 | BC-08 | 已修复（重试） | g04 BackgroundTasks 答案正确但没有引用 | 引用完整率 |
 | BC-09 | 已修复（重试） | g08 HTTPS/TLS 答案正确但没有引用 | 引用完整率 |
-| BC-10 | 部分修复 | g15 0.100.0 版本题路由到 release-notes，但索引只保留最近 20 版 | 版本检索 |
-| BC-11 | 已修复（重试） | g16 regex→pattern 答案正确但没有引用 | 引用完整率 |
-| BC-12 | TODO | g03 路径/查询参数答案正确但引用没命中期望 URL | 引用选择 |
-| BC-13 | TODO | g22 装饰器/参数区别答案正确但引用指向相邻文档 | 引用选择 |
+| BC-10 | 已修复（历史 collection） | g15 0.100.0 路由到独立 release-notes collection | 版本检索 |
+| BC-11 | 回归 | g16 regex→pattern 内容正确，但引用没命中期望 URL | 引用选择 |
+| BC-12 | 本轮通过 | g03 路径/查询参数引用命中，但仍脆弱 | 引用选择 |
+| BC-13 | 本轮通过 | g22 装饰器/参数引用命中，但仍脆弱 | 引用选择 |
 
 当前整体基线：
 
 - 检索：30 条，Recall@5 = 1.0，Recall@1 = 0.933，MRR = 0.967
-- 生成：24 条，21 pass，citation_validity = 1.0，citation_hit = 0.9，refusal_accuracy = 1.0
+- 生成：24 条，23 pass，citation_validity = 1.0，citation_hit = 0.95，refusal_accuracy = 1.0
 
 这些不是“完全没召回”，而是**排序、引用选择或标注问题**。
 
@@ -369,7 +369,8 @@ source_recall: false
 
 ### 状态
 
-部分修复：`route_doc_type` 已把版本号问题强制路由到 `release_notes`；但当前索引只保留最近 20 个版本，0.100.0 不在其中，模型正确拒答而不是编造。完整修复需要历史 collection。
+已修复：`scripts/build_version_collection.py` 把 0.100.0 release-notes 写入独立 collection `fastapi_docs_v0100`；API 按版本选择 collection。g15 现在返回 `docs_version=0.100.0` 的来源并通过。  
+限制：这是 release-notes-only collection，不是完整 0.100 文档树。
 
 ---
 
@@ -390,7 +391,7 @@ citation_hit: false
 
 ### 干预候选
 
-已修复：同 BC-08 的引用重试；g16 已通过。
+回归：引用重试解决了“无引用”，但本轮 g16 仍引用了非期望 URL；内容正确，citation_hit=false。
 
 ---
 

@@ -23,6 +23,7 @@ from fastapi_docs_rag.retrieval.dense import DenseRetriever, SearchHit  # noqa: 
 from fastapi_docs_rag.retrieval.hybrid import HybridRetriever  # noqa: E402
 from fastapi_docs_rag.retrieval.rerank import LexicalReranker  # noqa: E402
 from fastapi_docs_rag.retrieval.router import route_doc_type  # noqa: E402
+from fastapi_docs_rag.retrieval.versioning import select_collection  # noqa: E402
 
 DEFAULT_GOLDEN = Path("data/eval/generation_set.jsonl")
 CITATION_RE = re.compile(r"\[(\d+)\]")
@@ -56,12 +57,14 @@ def load_cases(path: Path) -> list[dict]:
 def build_retriever(
     settings: Settings,
     client: QdrantClient,
+    collection: str | None = None,
 ) -> DenseRetriever | HybridRetriever:
+    target = collection or settings.qdrant_collection
     embedder = make_embedder(settings)
-    dense = DenseRetriever(client, embedder, collection=settings.qdrant_collection)
+    dense = DenseRetriever(client, embedder, collection=target)
     if settings.retrieval_mode.lower() != "hybrid":
         return dense
-    bm25 = BM25Index.from_qdrant(client, settings.qdrant_collection)
+    bm25 = BM25Index.from_qdrant(client, target)
     return HybridRetriever(
         dense,
         bm25,
@@ -103,7 +106,7 @@ def main() -> None:
         cases = cases[: args.limit]
 
     qdrant = QdrantClient(url=settings.qdrant_url)
-    retriever = build_retriever(settings, qdrant)
+    retrievers: dict[str, DenseRetriever | HybridRetriever] = {}
     chat_client = make_chat_client(settings)
     results = []
     latencies: list[float] = []
@@ -116,6 +119,15 @@ def main() -> None:
             should_refuse = bool(case.get("should_refuse", False))
             force_no_context = bool(case.get("force_no_context", False))
             start = time.perf_counter()
+            collection, _historical = select_collection(
+                question,
+                case.get("docs_version"),
+                settings,
+            )
+            retriever = retrievers.get(collection)
+            if retriever is None:
+                retriever = build_retriever(settings, qdrant, collection)
+                retrievers[collection] = retriever
             try:
                 hits: list[SearchHit] = (
                     []

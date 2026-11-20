@@ -71,6 +71,7 @@ from fastapi_docs_rag.retrieval.rerank import (
     Reranker,
 )
 from fastapi_docs_rag.retrieval.router import route_doc_type
+from fastapi_docs_rag.retrieval.versioning import select_collection
 from fastapi_docs_rag.security import (
     RateLimiter,
     RateLimitExceeded,
@@ -282,19 +283,19 @@ def _sources_for_hits(hits: list[SearchHit]) -> list[ChatSource]:
     ]
 
 
-@lru_cache(maxsize=1)
-def _get_retriever() -> DenseRetriever | HybridRetriever:
+@lru_cache(maxsize=4)
+def _get_retriever_for(collection: str) -> DenseRetriever | HybridRetriever:
     settings = get_settings()
     embedder = make_embedder(settings)
     client = QdrantClient(url=settings.qdrant_url)
     dense = DenseRetriever(
         client,
         embedder,
-        collection=settings.qdrant_collection,
+        collection=collection,
     )
     if settings.retrieval_mode.lower() != "hybrid":
         return dense
-    bm25 = BM25Index.from_qdrant(client, settings.qdrant_collection)
+    bm25 = BM25Index.from_qdrant(client, collection)
     reranker: Reranker | None = None
     if settings.rerank_enabled:
         provider = settings.reranker_provider.lower()
@@ -318,6 +319,10 @@ def _get_retriever() -> DenseRetriever | HybridRetriever:
         rerank_top_k=settings.rerank_top_k,
         rerank_skip_score=settings.rerank_skip_score,
     )
+
+
+def _get_retriever() -> DenseRetriever | HybridRetriever:
+    return _get_retriever_for(get_settings().qdrant_collection)
 
 
 @lru_cache(maxsize=1)
@@ -345,17 +350,22 @@ def _retrieval_hits(
             history if history is not None else _load_history(payload.session_id),
         )
     doc_type = route_doc_type(payload.query, payload.doc_type)
+    collection, historical_version = select_collection(
+        payload.query,
+        payload.docs_version,
+        settings,
+    )
     cache_key = None
     if settings.retrieval_cache_enabled:
         cache_key = make_retrieval_key(
             query=query,
             limit=payload.limit,
             doc_type=doc_type,
-            docs_version=payload.docs_version,
+            docs_version=payload.docs_version if historical_version is None else historical_version,
             include_deprecated=payload.include_deprecated,
             include_meta=payload.include_meta,
             include_reference=payload.include_reference,
-            identity=index_identity(),
+            identity=f"{index_identity()}:{collection}",
             settings=settings,
         )
         cached = _get_retrieval_cache().get(cache_key)
@@ -365,8 +375,13 @@ def _retrieval_hits(
             return cached, timings
 
     setup_started = time.perf_counter()
-    retriever = _get_retriever()
+    retriever = (
+        _get_retriever()
+        if collection == settings.qdrant_collection
+        else _get_retriever_for(collection)
+    )
     timings["setup_ms"] = (time.perf_counter() - setup_started) * 1000
+    timings["historical_collection"] = 1.0 if historical_version else 0.0
     hits = retriever.search(
         query,
         limit=payload.limit,

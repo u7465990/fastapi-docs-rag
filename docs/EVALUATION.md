@@ -275,11 +275,11 @@ uv run --no-sync python scripts/evaluate_generation.py
 cases: 24
 answerable: 20
 no_answer: 4
-passed: 21
-pass_rate: 0.875
+passed: 23
+pass_rate: 0.958
 source_recall: 1.000
 citation_validity: 1.000
-citation_hit: 0.900
+citation_hit: 0.950
 keyword_coverage: 1.000
 refusal_accuracy: 1.000
 latency p50: 4802ms
@@ -289,9 +289,9 @@ latency max: 6635ms
 
 ### 失败分布
 
-- `g03` 路径/查询参数：内容正确，但引用选择没命中期望 URL
-- `g15` 0.100.0 版本题：自动路由到 release-notes，但索引只保留最近 20 个版本，模型正确地说“文档只覆盖 0.155–0.162”
-- `g22` 装饰器 vs 函数参数：内容正确，但引用指向了相邻依赖文档
+- `g16` regex→pattern：内容正确，但引用没命中期望 URL
+- `g03` / `g22` 本轮通过；引用选择仍是脆弱点，不能视为稳定
+- `g15` 已通过：0.100.0 查询路由到历史 collection，来源版本为 0.100.0
 
 ### 已修复
 
@@ -328,7 +328,7 @@ latency max: 6635ms
 - 30 条中文问题、英文文档，dense baseline 的 Recall@5 = 1.0。
 - hybrid + lexical rerank 把 MRR 从 0.953 提到 0.967，Recall 不变。
 - 小 cross-encoder 在 30 条上 MRR 仍为 0.967，没有额外提升；只能作为链路验证。
-- 24 条生成评估 21 条通过；剩余失败是 g03/g22 引用选择、g15 缺历史版本数据。
+- 24 条生成评估 23 条通过；剩余失败是 g16 引用选择；g15 已通过历史 collection 修复。
 - reference 默认过滤和 golden 标注修正是两处真实改进。
 - p50/p95 检索延迟在本地 8 并发测试中仍低于 500ms（见 `WORKLOG_2026-11-14.md`）。
 
@@ -337,8 +337,8 @@ latency max: 6635ms
 - 30 条检索集仍偏小，且问题是从文档主题手工构造的，偏“可答”
 - 生成集已有无答案/硬负例/代码/版本题，但只有 24 条
 - Recall@5 = 1.0 不代表生产质量，只代表这 30 条都能在前 5 找到
-- 引用选择仍有 g03/g22 失败，说明 citation attribution 不够精确
-- g15 暴露历史版本数据缺失，不是单纯路由问题
+- 引用选择仍有 g16 失败；g03/g22 本轮通过但不稳定，citation attribution 仍不够精确
+- g15 已通过 0.100.0 历史 release-notes collection；但不是完整历史 docs tree
 
 ### 下一步
 

@@ -6,7 +6,7 @@
 
 项目签名是**版本感知的活知识库**：文档变更可感知、增量可索引、回答可标注适用版本。
 
-> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense + BM25 hybrid retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估、24 条生成/引用/拒答评估（21 pass）、cross-encoder 可选 rerank、精确答案缓存、版本意图路由、manifest 增量索引、查询改写、低分拒答、上下文预算/去重、引用重试、async API/SSE、并发压测报告、CI 和 HTTP 限流/额度锁；下一步是 RAGAS 与历史 collection 检索。
+> 当前状态：Phase 1 进行中。解析、父子切分、embedding、Qdrant indexer、dense + BM25 hybrid retrieval（`/api/v1/search`）、RAG 问答（`/api/v1/chat`）、SSE 流式回答（`/api/v1/chat/stream`）、多轮会话、Docker API 和 Nginx 静态托管的聊天页已可用；已有 30 条检索评估、24 条生成/引用/拒答评估（23 pass）、cross-encoder 可选 rerank、精确答案缓存、版本意图路由、0.100/0.162 双版本 collection、manifest 增量索引、查询改写、低分拒答、上下文预算/去重、引用重试、async API/SSE、并发压测报告、CI 和 HTTP 限流/额度锁；下一步是 RAGAS 与完整历史 docs tree。
 
 ## 架构
 
@@ -42,6 +42,34 @@ flowchart TB
 - 在线：dense + BM25 → RRF → 高置信度跳过 rerank 或 cross-encoder → 上下文预算 → LLM → citation 校验。
 - 缓存：答案缓存和检索结果缓存都带 `source_ref + build_id`，索引切换后失效。
 - 可观测：响应/SSE `done` 带 `timings`；前端“调试信息”展示改写 query、阶段耗时和各来源分数。
+- 历史版本：`0.100.0` 查询会路由到独立 collection `fastapi_docs_v0100`，返回 `docs_version=0.100.0`；当前索引是 0.162.0。
+
+### 历史版本 collection
+
+目前只做了 **0.100.0 release-notes collection**，不是完整历史文档树：
+
+```bash
+python scripts/build_version_collection.py \
+  --version 0.100.0 \
+  --collection fastapi_docs_v0100
+```
+
+路由：
+
+```text
+query 中出现 0.100.0
+  -> retrieval/versioning.py
+  -> fastapi_docs_v0100
+  -> sources docs_version=0.100.0
+```
+
+真实限制：
+
+- 只有 release notes 的 0.100.0 段落，不是 0.100.0 的全部 docs
+- 其他历史版本还没有 collection
+- 未命中已知历史版本时回退当前索引，不应假装查过旧版本
+
+对应评估：`g15` 已通过。
 
 ![调试面板](docs/assets/debug-panel.png)
 

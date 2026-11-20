@@ -103,7 +103,7 @@ docs/PERFORMANCE.md
 - 24 条生成：21 pass
 - citation validity 1.0
 - 100 并发检索：p95 3.70s，0 error
-- 失败案例：g03/g22 引用选择、g15 历史版本缺失
+- 失败案例：g16 引用选择；完整历史 docs tree 未做（0.100 release-notes collection 已接通）
 
 不要隐瞒失败。
 
@@ -112,7 +112,7 @@ docs/PERFORMANCE.md
 讲：
 
 > 这个项目最想证明的是：RAG 不是把文档丢给 LLM，而是检索、重排、引用、拒答、评估和延迟都要可测量。  
-> 当前明确没做的是历史多 collection 和 RAGAS，这是下一步。
+> 当前已做 0.100/0.162 双版本 release-notes collection；完整历史 docs tree 和 RAGAS 是下一步。
 
 ## 录制建议
 

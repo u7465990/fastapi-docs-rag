@@ -1,4 +1,4 @@
-.PHONY: install install-rag dev up down logs lint format test test-unit check-parser check-chunker check-providers ingest update-index diff-report history-report rebuild-index smoke-search load-search load-chat evaluate evaluate-generation web-build
+.PHONY: install install-rag dev up down logs lint format test test-unit check-parser check-chunker check-providers ingest update-index diff-report history-report build-history rebuild-index smoke-search load-search load-chat evaluate evaluate-generation web-build
 
 UV ?= uv
 # 依赖由 make install 同步；运行时不再 sync，避免把 rag extra 卸掉
@@ -58,6 +58,9 @@ diff-report:
 
 history-report:
 	$(RUN) python scripts/history_report.py
+
+build-history:
+	$(RUN) python scripts/build_version_collection.py --version 0.100.0 --collection fastapi_docs_v0100
 
 rebuild-index:
 	$(RUN) python scripts/rebuild_index.py
